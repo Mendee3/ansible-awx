@@ -1,0 +1,143 @@
+---
+# ─────────────────────────────────────────
+# CIS Benchmark - Linux
+# Based on CIS Distribution Independent Linux
+# ─────────────────────────────────────────
+
+# 1. Filesystem
+- name: CIS 1.1 - Disable unused filesystems
+  lineinfile:
+    path: /etc/modprobe.d/cis.conf
+    line: "install {{ item }} /bin/true"
+    create: yes
+  loop:
+    - cramfs
+    - freevxfs
+    - jffs2
+    - hfs
+    - hfsplus
+    - squashfs
+    - udf
+
+# 2. Kernel Parameters
+- name: CIS 3.1 - Set kernel network parameters
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+    ignoreerrors: yes
+  loop:
+    - { name: 'net.ipv4.ip_forward', value: '0' }
+    - { name: 'net.ipv4.conf.all.send_redirects', value: '0' }
+    - { name: 'net.ipv4.conf.default.send_redirects', value: '0' }
+    - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
+    - { name: 'net.ipv4.conf.all.log_martians', value: '1' }
+    - { name: 'net.ipv4.conf.default.log_martians', value: '1' }
+    - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: '1' }
+    - { name: 'net.ipv4.icmp_ignore_bogus_error_responses', value: '1' }
+    - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
+    - { name: 'net.ipv4.tcp_syncookies', value: '1' }
+    - { name: 'net.ipv6.conf.all.disable_ipv6', value: '1' }
+    - { name: 'kernel.randomize_va_space', value: '2' }
+
+# 3. Auditd
+- name: CIS 4.1 - Install auditd
+  package:
+    name: "{{ 'auditd' if ansible_os_family == 'Debian' else 'audit' }}"
+    state: present
+
+- name: CIS 4.1 - Enable auditd
+  systemd:
+    name: "{{ 'auditd' if ansible_os_family == 'Debian' else 'auditd' }}"
+    enabled: yes
+    state: started
+
+- name: CIS 4.1 - Configure audit rules
+  copy:
+    dest: /etc/audit/rules.d/cis.rules
+    content: |
+      # CIS Benchmark Audit Rules
+      -a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time-change
+      -a always,exit -F arch=b64 -S clock_settime -k time-change
+      -w /etc/localtime -p wa -k time-change
+      -w /etc/group -p wa -k identity
+      -w /etc/passwd -p wa -k identity
+      -w /etc/shadow -p wa -k identity
+      -w /etc/sudoers -p wa -k identity
+      -a always,exit -F arch=b64 -S sethostname -S setdomainname -k system-locale
+      -w /var/log/lastlog -p wa -k logins
+      -w /var/run/faillock/ -p wa -k logins
+      -w /var/log/sudo.log -p wa -k actions
+    backup: yes
+  notify: restart auditd
+
+# 4. System Hardening
+- name: CIS 5.1 - Set umask in /etc/profile
+  lineinfile:
+    path: /etc/profile
+    regexp: '^umask'
+    line: 'umask 027'
+
+- name: CIS 5.1 - Set umask in /etc/bashrc
+  lineinfile:
+    path: /etc/bashrc
+    regexp: '^umask'
+    line: 'umask 027'
+  ignore_errors: yes
+
+- name: CIS 5.2 - Set login banner /etc/issue
+  copy:
+    dest: /etc/issue
+    content: |
+      ********************************************************************
+      * AUTHORIZED ACCESS ONLY                                           *
+      * This system is for authorized users only. All activities are     *
+      * monitored and recorded. Unauthorized access is prohibited.       *
+      ********************************************************************
+
+- name: CIS 5.2 - Set login banner /etc/issue.net
+  copy:
+    dest: /etc/issue.net
+    content: |
+      ********************************************************************
+      * AUTHORIZED ACCESS ONLY                                           *
+      * This system is for authorized users only. All activities are     *
+      * monitored and recorded. Unauthorized access is prohibited.       *
+      ********************************************************************
+
+- name: CIS 5.3 - Ensure sudo is installed
+  package:
+    name: sudo
+    state: present
+
+- name: CIS 5.3 - Ensure sudo log file exists
+  lineinfile:
+    path: /etc/sudoers
+    regexp: '^Defaults.*logfile'
+    line: 'Defaults logfile="/var/log/sudo.log"'
+    validate: 'visudo -cf %s'
+
+# 5. Disable unnecessary services
+- name: CIS 2.1 - Disable unnecessary services
+  systemd:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop:
+    - avahi-daemon
+    - cups
+    - nfs
+    - rpcbind
+    - telnet
+    - vsftpd
+    - dovecot
+    - samba
+  ignore_errors: yes
+
+handlers:
+  - name: restart auditd
+    systemd:
+      name: auditd
+      state: restarted
+    ignore_errors: yes

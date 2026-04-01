@@ -1,0 +1,57 @@
+---
+- name: Create admin users
+  user:
+    name: "{{ item }}"
+    state: present
+    shell: /bin/bash
+    groups: wheel
+    append: yes
+    password: "{{ 'Change@Me1st!' | password_hash('sha512') }}"
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+
+- name: Add admin users to sudo group (Debian)
+  user:
+    name: "{{ item }}"
+    groups: sudo
+    append: yes
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+  when: ansible_os_family == "Debian"
+
+- name: Force password change on first login
+  command: chage -d 0 {{ item }}
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+
+- name: Set password aging for admin users (ISO standard)
+  command: chage -M 90 -m 1 -W 14 {{ item }}
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+
+- name: Add wheel group to sudoers (RHEL)
+  lineinfile:
+    path: /etc/sudoers
+    regexp: '^%wheel'
+    line: '%wheel ALL=(ALL) ALL'
+    validate: 'visudo -cf %s'
+  when: ansible_os_family == "RedHat"
+
+- name: Copy scloud SSH key to admin users
+  authorized_key:
+    user: "{{ item }}"
+    state: present
+    key: "{{ lookup('file', '/home/scloud/.ssh/id_ed25519.pub') }}"
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+  ignore_errors: yes

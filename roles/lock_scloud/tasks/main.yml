@@ -1,0 +1,16 @@
+---
+- name: Lock scloud account
+  user:
+    name: scloud
+    password_lock: yes
+
+- name: Remove scloud from AllowUsers in sshd (replaced by admin users)
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^AllowUsers'
+    line: 'AllowUsers admin_mendjargal admin_yusunerdene admin_bilegsaikhan'
+
+- name: Restart SSH after scloud removal
+  systemd:
+    name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+    state: restarted

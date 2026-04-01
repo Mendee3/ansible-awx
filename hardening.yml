@@ -1,0 +1,19 @@
+---
+- name: Server Hardening Playbook
+  hosts: all
+  become: yes
+
+  vars:
+    admin_users:
+      - admin_mendjargal
+      - admin_yusunerdene
+      - admin_bilegsaikhan
+    default_password: "Change@Me1st!"   # force changed on first login
+
+  roles:
+    - packages
+    - ssh_hardening
+    - cis_benchmark
+    - password_policy
+    - admin_users
+    - lock_scloud

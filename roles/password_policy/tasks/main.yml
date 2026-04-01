@@ -1,0 +1,82 @@
+---
+# ─────────────────────────────────────────
+# Password Policy - ISO 27001 / CIS Level 1
+# ─────────────────────────────────────────
+
+- name: Install libpwquality (RHEL)
+  dnf:
+    name: libpwquality
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install libpwquality (Debian)
+  apt:
+    name: libpam-pwquality
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Configure pwquality - complexity
+  lineinfile:
+    path: /etc/security/pwquality.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    create: yes
+  loop:
+    - { regexp: '^minlen',   line: 'minlen = 14' }
+    - { regexp: '^dcredit',  line: 'dcredit = -1' }
+    - { regexp: '^ucredit',  line: 'ucredit = -1' }
+    - { regexp: '^lcredit',  line: 'lcredit = -1' }
+    - { regexp: '^ocredit',  line: 'ocredit = -1' }
+    - { regexp: '^maxrepeat',line: 'maxrepeat = 3' }
+    - { regexp: '^minclass', line: 'minclass = 4' }
+
+- name: Configure password aging - login.defs
+  lineinfile:
+    path: /etc/login.defs
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: '^PASS_MAX_DAYS', line: 'PASS_MAX_DAYS  90' }
+    - { regexp: '^PASS_MIN_DAYS', line: 'PASS_MIN_DAYS  1' }
+    - { regexp: '^PASS_WARN_AGE', line: 'PASS_WARN_AGE  14' }
+
+- name: Configure faillock - account lockout (RHEL)
+  lineinfile:
+    path: /etc/security/faillock.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    create: yes
+  loop:
+    - { regexp: '^deny',        line: 'deny = 5' }
+    - { regexp: '^unlock_time', line: 'unlock_time = 900' }
+    - { regexp: '^audit',       line: 'audit' }
+  when: ansible_os_family == "RedHat"
+
+- name: Configure faillock - account lockout (Debian)
+  lineinfile:
+    path: /etc/pam.d/common-auth
+    regexp: 'pam_faillock'
+    line: "auth required pam_faillock.so preauth deny=5 unlock_time=900"
+    insertbefore: '^auth.*pam_unix'
+  when: ansible_os_family == "Debian"
+
+- name: Configure password history (RHEL)
+  lineinfile:
+    path: /etc/pam.d/system-auth
+    regexp: 'pam_pwhistory'
+    line: "password required pam_pwhistory.so remember=12 use_authtok"
+    insertafter: '^password.*pam_pwquality'
+  when: ansible_os_family == "RedHat"
+
+- name: Configure password history (Debian)
+  lineinfile:
+    path: /etc/pam.d/common-password
+    regexp: 'pam_pwhistory'
+    line: "password required pam_pwhistory.so remember=12 use_authtok"
+    insertafter: '^password.*pam_pwquality'
+  when: ansible_os_family == "Debian"
+
+- name: Apply password aging to scloud only
+  command: chage -M 90 -m 1 -W 14 scloud
+  ignore_errors: yes
