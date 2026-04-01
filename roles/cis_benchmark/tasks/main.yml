@@ -52,6 +52,7 @@
     name: "{{ 'auditd' if ansible_os_family == 'Debian' else 'auditd' }}"
     enabled: yes
     state: started
+  ignore_errors: yes
 
 - name: CIS 4.1 - Configure audit rules
   copy:
