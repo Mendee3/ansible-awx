@@ -4,7 +4,7 @@
     name: "{{ item }}"
     state: present
     shell: /bin/bash
-    groups: wheel
+    groups: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
     append: yes
     password: "$6$pQQf0aq7rn3qohcb$9kJXJM6vrJgPgNP2G1FUHMIYo0Hl5e/BFILASb/YGwlLQ6VuxF7lPoTa8fn5Ntl0Rt4i6cAPt6lT6mxaY9srv/"
   loop:
