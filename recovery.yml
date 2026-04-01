@@ -1,0 +1,49 @@
+---
+- name: Emergency Recovery
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Unlock scloud account
+      user:
+        name: scloud
+        password_lock: no
+
+    - name: Fix admin users SSH keys
+      authorized_key:
+        user: "{{ item }}"
+        state: present
+        exclusive: yes
+        key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFawq1WbPc4sDOrrTy7iKOHjwU3xLO0yDAO/SyQyuJPI ansible-awx"
+      loop:
+        - admin_mendjargal
+        - admin_yusunerdene
+        - admin_bilegsaikhan
+
+    - name: Reset admin passwords
+      user:
+        name: "{{ item }}"
+        password: "$6$pQQf0aq7rn3qohcb$9kJXJM6vrJgPgNP2G1FUHMIYo0Hl5e/BFILASb/YGwlLQ6VuxF7lPoTa8fn5Ntl0Rt4i6cAPt6lT6mxaY9srv/"
+        update_password: always
+      loop:
+        - admin_mendjargal
+        - admin_yusunerdene
+        - admin_bilegsaikhan
+
+    - name: Force password change on first login
+      command: chage -d 0 {{ item }}
+      loop:
+        - admin_mendjargal
+        - admin_yusunerdene
+        - admin_bilegsaikhan
+
+    - name: Restore scloud to AllowUsers in sshd
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowUsers'
+        line: 'AllowUsers admin_mendjargal admin_yusunerdene admin_bilegsaikhan scloud'
+
+    - name: Restart SSH
+      systemd:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: restarted
