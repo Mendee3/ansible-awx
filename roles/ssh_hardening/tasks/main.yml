@@ -22,13 +22,13 @@
   lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^#?ClientAliveInterval'
-    line: 'ClientAliveInterval 900'
+    line: 'ClientAliveInterval 3600'
 
 - name: Set SSH max alive count
   lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^#?ClientAliveCountMax'
-    line: 'ClientAliveCountMax 0'
+    line: 'ClientAliveCountMax 3'
 
 - name: Disable X11 forwarding
   lineinfile:

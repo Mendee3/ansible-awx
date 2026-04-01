@@ -6,7 +6,7 @@
     shell: /bin/bash
     groups: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
     append: yes
-    password: "$6$pQQf0aq7rn3qohcb$9kJXJM6vrJgPgNP2G1FUHMIYo0Hl5e/BFILASb/YGwlLQ6VuxF7lPoTa8fn5Ntl0Rt4i6cAPt6lT6mxaY9srv/"
+    password: "$6$4CS6.aS8l16hcp8P$Y2mm3zgjU3Oe6U42N2Xpm0Gtm24gAzG0LYZTyvPggaT4Dvvl3R0HQJlJpp0eCFGO4nLLmvzgZPDdratJ2tYX9."
   loop:
     - admin_mendjargal
     - admin_yusunerdene
@@ -49,7 +49,7 @@
   authorized_key:
     user: "{{ item }}"
     state: present
-    key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKOk9dTjGtmD0fFgM6/KrFh9rUV+WNR6qs3xnSRQ5f5h ansible-awx"
+    key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFawq1WbPc4sDOrrTy7iKOHjwU3xLO0yDAO/SyQyuJPI ansible-awx"
   loop:
     - admin_mendjargal
     - admin_yusunerdene
