@@ -49,7 +49,7 @@
   authorized_key:
     user: "{{ item }}"
     state: present
-    key: "{{ lookup('file', '/home/scloud/.ssh/id_ed25519.pub') }}"
+    key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKOk9dTjGtmD0fFgM6/KrFh9rUV+WNR6qs3xnSRQ5f5h ansible-awx"
   loop:
     - admin_mendjargal
     - admin_yusunerdene
