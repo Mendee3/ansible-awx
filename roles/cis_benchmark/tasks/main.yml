@@ -92,11 +92,13 @@
   copy:
     dest: /etc/issue
     content: |
-      ********************************************************************
-      * AUTHORIZED ACCESS ONLY                                           *
-      * This system is for authorized users only. All activities are     *
-      * monitored and recorded. Unauthorized access is prohibited.       *
-      ********************************************************************
+      ============================================================
+        Digital Concept Linux Infrastructure Server
+        Authorized personnel only.
+        All actions are logged and monitored.
+        If you are not an authorized user,
+        disconnect immediately.
+      ============================================================
 
 - name: CIS 5.2 - Set login banner /etc/issue.net
   copy:
