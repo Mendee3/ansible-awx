@@ -76,13 +76,14 @@
 # 4. System Hardening
 - name: CIS 5.1 - Set umask in /etc/profile
   lineinfile:
-    path: /etc/profile
+    path: "{{ '/etc/bash.bashrc' if ansible_os_family == 'Debian' else '/etc/bashrc' }}"
     regexp: '^umask'
     line: 'umask 027'
+  ignore_errors: yes
 
 - name: CIS 5.1 - Set umask in /etc/bashrc
   lineinfile:
-    path: /etc/bashrc
+    path: "{{ '/etc/bash.bashrc' if ansible_os_family == 'Debian' else '/etc/bashrc' }}"
     regexp: '^umask'
     line: 'umask 027'
   ignore_errors: yes

@@ -6,7 +6,7 @@
     shell: /bin/bash
     groups: wheel
     append: yes
-    password: "{{ 'Change@Me1st!' | password_hash('sha512') }}"
+    password: "$6$pQQf0aq7rn3qohcb$9kJXJM6vrJgPgNP2G1FUHMIYo0Hl5e/BFILASb/YGwlLQ6VuxF7lPoTa8fn5Ntl0Rt4i6cAPt6lT6mxaY9srv/"
   loop:
     - admin_mendjargal
     - admin_yusunerdene
