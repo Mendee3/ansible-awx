@@ -135,9 +135,3 @@
     - samba
   ignore_errors: yes
 
-handlers:
-  - name: restart auditd
-    systemd:
-      name: auditd
-      state: restarted
-    ignore_errors: yes
