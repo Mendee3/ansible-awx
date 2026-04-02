@@ -1,0 +1,30 @@
+---
+- name: Lock scloud Account
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Confirm scloud is not used by any service
+      shell: "ps aux | grep scloud | grep -v grep"
+      register: scloud_processes
+      ignore_errors: yes
+
+    - name: Show scloud processes
+      debug:
+        msg: "{{ scloud_processes.stdout_lines }}"
+
+    - name: Lock scloud account
+      user:
+        name: scloud
+        password_lock: yes
+
+    - name: Remove scloud from AllowUsers in sshd
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowUsers'
+        line: 'AllowUsers admin_mendjargal admin_yusunerdene admin_bilegsaikhan'
+
+    - name: Restart SSH after scloud removal
+      systemd:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: restarted
