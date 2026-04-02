@@ -55,3 +55,42 @@
     - admin_yusunerdene
     - admin_bilegsaikhan
   ignore_errors: yes
+
+- name: Check if sshgroup exists and add admin users
+  user:
+    name: "{{ item }}"
+    groups: sshgroup
+    append: yes
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+    - scloud
+  ignore_errors: yes
+
+- name: Allow admin users passwordless sudo
+  copy:
+    dest: /etc/sudoers.d/admin_users
+    content: |
+      admin_mendjargal ALL=(ALL) NOPASSWD: ALL
+      admin_yusunerdene ALL=(ALL) NOPASSWD: ALL
+      admin_bilegsaikhan ALL=(ALL) NOPASSWD: ALL
+    mode: '0440'
+    validate: 'visudo -cf %s'
+
+- name: Ensure sshgroup exists
+  group:
+    name: sshgroup
+    state: present
+
+- name: Add admin users and scloud to sshgroup
+  user:
+    name: "{{ item }}"
+    groups: sshgroup
+    append: yes
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+    - scloud
+  ignore_errors: yes
