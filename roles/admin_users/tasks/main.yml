@@ -1,4 +1,9 @@
 ---
+- name: Ensure sshgroup exists
+  group:
+    name: sshgroup
+    state: present
+
 - name: Create admin users
   user:
     name: "{{ item }}"
@@ -23,20 +28,6 @@
     - admin_bilegsaikhan
   when: ansible_os_family == "Debian"
 
-- name: Force password change on first login
-  command: chage -d 0 {{ item }}
-  loop:
-    - admin_mendjargal
-    - admin_yusunerdene
-    - admin_bilegsaikhan
-
-- name: Set password aging for admin users (ISO standard)
-  command: chage -M 90 -m 1 -W 14 {{ item }}
-  loop:
-    - admin_mendjargal
-    - admin_yusunerdene
-    - admin_bilegsaikhan
-
 - name: Add wheel group to sudoers (RHEL)
   lineinfile:
     path: /etc/sudoers
@@ -44,34 +35,6 @@
     line: '%wheel ALL=(ALL) ALL'
     validate: 'visudo -cf %s'
   when: ansible_os_family == "RedHat"
-
-- name: Copy scloud SSH key to admin users
-  authorized_key:
-    user: "{{ item }}"
-    state: present
-    key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFawq1WbPc4sDOrrTy7iKOHjwU3xLO0yDAO/SyQyuJPI ansible-awx"
-  loop:
-    - admin_mendjargal
-    - admin_yusunerdene
-    - admin_bilegsaikhan
-  ignore_errors: yes
-
-- name: Ensure sshgroup exists
-  group:
-    name: sshgroup
-    state: present
-
-- name: Check if sshgroup exists and add admin users
-  user:
-    name: "{{ item }}"
-    groups: sshgroup
-    append: yes
-  loop:
-    - admin_mendjargal
-    - admin_yusunerdene
-    - admin_bilegsaikhan
-    - scloud
-  ignore_errors: yes
 
 - name: Allow admin users passwordless sudo
   copy:
@@ -93,4 +56,29 @@
     - admin_yusunerdene
     - admin_bilegsaikhan
     - scloud
+  ignore_errors: yes
+
+- name: Force password change on first login
+  command: chage -d 0 {{ item }}
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+
+- name: Set password aging for admin users (ISO standard)
+  command: chage -M 90 -m 1 -W 14 {{ item }}
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
+
+- name: Copy awxsvc SSH key to admin users
+  authorized_key:
+    user: "{{ item }}"
+    state: present
+    key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFawq1WbPc4sDOrrTy7iKOHjwU3xLO0yDAO/SyQyuJPI ansible-awx"
+  loop:
+    - admin_mendjargal
+    - admin_yusunerdene
+    - admin_bilegsaikhan
   ignore_errors: yes
