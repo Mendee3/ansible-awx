@@ -64,3 +64,10 @@
     path: /etc/ssh/sshd_config
     regexp: '^#?Banner'
     line: 'Banner /etc/issue.net'
+
+- name: Fix home directory permissions for scloud
+  file:
+    path: /home/scloud
+    mode: '0755'
+    owner: scloud
+    group: scloud
