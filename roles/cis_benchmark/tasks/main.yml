@@ -133,7 +133,6 @@
     - cups
     - nfs
     - rpcbind
-    - telnet
     - vsftpd
     - dovecot
     - samba
