@@ -56,6 +56,11 @@
     - admin_bilegsaikhan
   ignore_errors: yes
 
+- name: Ensure sshgroup exists
+  group:
+    name: sshgroup
+    state: present
+
 - name: Check if sshgroup exists and add admin users
   user:
     name: "{{ item }}"
@@ -77,11 +82,6 @@
       admin_bilegsaikhan ALL=(ALL) NOPASSWD: ALL
     mode: '0440'
     validate: 'visudo -cf %s'
-
-- name: Ensure sshgroup exists
-  group:
-    name: sshgroup
-    state: present
 
 - name: Add admin users and scloud to sshgroup
   user:
