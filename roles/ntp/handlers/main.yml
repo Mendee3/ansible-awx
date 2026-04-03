@@ -1,0 +1,6 @@
+---
+- name: restart chrony
+  systemd:
+    name: "{{ 'chrony' if ansible_os_family == 'Debian' else 'chronyd' }}"
+    state: restarted
+  ignore_errors: yes

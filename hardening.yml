@@ -12,6 +12,7 @@
 
   roles:
     - packages
+    - ntp
     - ssh_hardening
     - cis_benchmark
     - password_policy
