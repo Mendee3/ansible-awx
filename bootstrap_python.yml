@@ -5,10 +5,10 @@
   become: yes
 
   tasks:
-    - name: Disable netdata and broken repos first
+    - name: Disable netdata, pgdg and enterprisedb broken repos
       raw: |
         for repo in /etc/yum.repos.d/*.repo; do
-          if grep -qiE "netdata|pgdg" "$repo" 2>/dev/null; then
+          if grep -qiE "netdata|pgdg|enterprisedb" "$repo" 2>/dev/null; then
             sed -i 's/^enabled=1/enabled=0/g' "$repo"
             echo "Disabled: $repo"
           fi
