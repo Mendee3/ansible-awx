@@ -3,8 +3,11 @@
   dnf:
     name: chrony
     state: present
+    disable_gpg_check: yes
+    disablerepo: "netdata*"
   when: ansible_os_family == "RedHat"
   notify: restart chrony
+  ignore_errors: yes
 
 - name: Install chrony (Ubuntu/Debian)
   apt:

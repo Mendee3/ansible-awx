@@ -1,4 +1,12 @@
 ---
+- name: Clean up broken repos (RHEL)
+  shell: |
+    dnf clean all
+    dnf makecache --disablerepo=netdata* 2>/dev/null || true
+  when: ansible_os_family == "RedHat"
+  ignore_errors: yes
+  changed_when: false
+
 - name: Stop unattended-upgrades temporarily
   systemd:
     name: unattended-upgrades
@@ -34,6 +42,8 @@
       - unzip
       - lvm2
     state: present
+    disable_gpg_check: yes
+    disablerepo: "netdata*"
   when: ansible_os_family == "RedHat"
   ignore_errors: yes
 
