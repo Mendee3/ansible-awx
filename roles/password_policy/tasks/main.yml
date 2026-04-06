@@ -77,6 +77,3 @@
     insertafter: '^password.*pam_pwquality'
   when: ansible_os_family == "Debian"
 
-- name: Apply password aging to scloud only
-  command: chage -M 90 -m 1 -W 14 scloud
-  ignore_errors: yes
