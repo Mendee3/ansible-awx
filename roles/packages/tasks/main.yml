@@ -1,4 +1,28 @@
 ---
+- name: Stop unattended-upgrades temporarily
+  systemd:
+    name: unattended-upgrades
+    state: stopped
+  when: ansible_os_family == "Debian"
+  ignore_errors: yes
+
+- name: Wait for apt lock to be released
+  shell: |
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+      sleep 5
+    done
+  changed_when: false
+  when: ansible_os_family == "Debian"
+
+# ... all install tasks ...
+
+- name: Restart unattended-upgrades after install
+  systemd:
+    name: unattended-upgrades
+    state: started
+  when: ansible_os_family == "Debian"
+  ignore_errors: yes
+
 - name: Install required packages (RHEL/CentOS/Oracle/Alma)
   dnf:
     name:
@@ -13,6 +37,15 @@
   when: ansible_os_family == "RedHat"
   ignore_errors: yes
 
+- name: Wait for apt lock to be released
+  shell: |
+    while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; do
+      echo "Waiting for apt lock..."
+      sleep 5
+    done
+  changed_when: false
+  when: ansible_os_family == "Debian"
+
 - name: Install required packages (Ubuntu/Debian)
   apt:
     name:
@@ -25,6 +58,7 @@
       - lvm2
     state: present
     update_cache: yes
+    lock_timeout: 300
   when: ansible_os_family == "Debian"
   ignore_errors: yes
 
