@@ -2,7 +2,7 @@
 - name: Remove broken third party repo files (RHEL)
   shell: |
     for repo in /etc/yum.repos.d/*.repo; do
-      if grep -qiE "netdata|pgdg|enterprisedb" "$repo" 2>/dev/null; then
+      if grep -qiE "netdata|pgdg|enterprisedb|nginx-amplify" "$repo" 2>/dev/null; then
         echo "Removing: $repo"
         rm -f "$repo"
       fi
