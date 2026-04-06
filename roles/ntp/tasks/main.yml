@@ -65,9 +65,8 @@
   ignore_errors: yes
 
 - name: Set timezone to Asia/Ulaanbaatar (UTC+8)
-  timezone:
-    name: Asia/Ulaanbaatar
-  notify: restart chrony
+  command: timedatectl set-timezone Asia/Ulaanbaatar
+  changed_when: false
 
 - name: Verify timezone is set correctly
   command: timedatectl show --property=Timezone
@@ -76,4 +75,4 @@
 
 - name: Show current timezone
   debug:
-    msg: "Timezone: {{ timezone_result.stdout }}"
+    msg: "{{ timezone_result.stdout }}"
