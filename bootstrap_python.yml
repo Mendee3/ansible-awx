@@ -1,0 +1,18 @@
+---
+- name: Bootstrap Python 3.9 on RHEL 8 servers
+  hosts: all
+  gather_facts: no
+  become: yes
+
+  tasks:
+    - name: Install Python 3.9 (safe - does not replace system Python)
+      raw: dnf install -y python39
+      ignore_errors: yes
+
+    - name: Verify Python 3.9 installed
+      raw: /usr/bin/python3.9 --version
+      register: python_version
+
+    - name: Show Python version
+      debug:
+        msg: "{{ python_version.stdout }}"
