@@ -5,8 +5,15 @@
   become: yes
 
   tasks:
-    - name: Install Python 3.9 (safe - does not replace system Python)
-      raw: dnf install -y python39
+    - name: Disable broken third party repos
+      raw: |
+        for repo in netdata pgdg13 pgdg-rhel8-extras; do
+          dnf config-manager --disable $repo 2>/dev/null || true
+        done
+      ignore_errors: yes
+
+    - name: Install Python 3.9 using only base repos
+      raw: dnf install -y --disablerepo="*" --enablerepo="rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms,ubi-8-baseos,ubi-8-appstream" python39 2>&1 || dnf install -y --skip-broken python39 2>&1
       ignore_errors: yes
 
     - name: Verify Python 3.9 installed
@@ -16,4 +23,4 @@
 
     - name: Show Python version
       debug:
-        msg: "{{ python_version.stdout | default('skipped in check mode') }}"
+        msg: "{{ python_version.stdout | default('not installed') }}"
