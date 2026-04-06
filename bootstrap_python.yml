@@ -5,12 +5,12 @@
   become: yes
 
   tasks:
-    - name: Disable netdata, pgdg and enterprisedb broken repos
+    - name: Remove broken repo files entirely
       raw: |
         for repo in /etc/yum.repos.d/*.repo; do
           if grep -qiE "netdata|pgdg|enterprisedb" "$repo" 2>/dev/null; then
-            sed -i 's/^enabled=1/enabled=0/g' "$repo"
-            echo "Disabled: $repo"
+            echo "Removing: $repo"
+            rm -f "$repo"
           fi
         done
         dnf clean all 2>/dev/null || true
