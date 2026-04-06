@@ -5,15 +5,19 @@
   become: yes
 
   tasks:
-    - name: Disable broken third party repos
+    - name: Disable netdata and broken repos first
       raw: |
-        for repo in netdata pgdg13 pgdg-rhel8-extras; do
-          dnf config-manager --disable $repo 2>/dev/null || true
+        for repo in /etc/yum.repos.d/*.repo; do
+          if grep -qiE "netdata|pgdg" "$repo" 2>/dev/null; then
+            sed -i 's/^enabled=1/enabled=0/g' "$repo"
+            echo "Disabled: $repo"
+          fi
         done
+        dnf clean all 2>/dev/null || true
       ignore_errors: yes
 
-    - name: Install Python 3.9 using only base repos
-      raw: dnf install -y --disablerepo="*" --enablerepo="rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms,ubi-8-baseos,ubi-8-appstream" python39 2>&1 || dnf install -y --skip-broken python39 2>&1
+    - name: Install Python 3.9
+      raw: dnf install -y python39 2>&1
       ignore_errors: yes
 
     - name: Verify Python 3.9 installed

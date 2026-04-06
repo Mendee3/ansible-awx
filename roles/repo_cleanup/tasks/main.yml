@@ -1,31 +1,36 @@
 ---
 # ─────────────────────────────────────────
-# RHEL/CentOS/Oracle/Alma - Disable third party repos
+# RHEL/CentOS/Oracle/Alma - Disable broken
+# and unwanted third party repos
 # ─────────────────────────────────────────
-- name: Find all third party repo files (RHEL)
+- name: Find all repo files (RHEL)
   find:
     paths: /etc/yum.repos.d/
     patterns: "*.repo"
   register: repo_files
   when: ansible_os_family == "RedHat"
 
-- name: Disable third party repos (RHEL)
+- name: Disable netdata repos (RHEL)
   shell: |
     for repo in /etc/yum.repos.d/*.repo; do
-      filename=$(basename $repo)
-      # Keep only base OS repos
-      case "$filename" in
-        redhat*.repo|rhel*.repo|centos*.repo|almalinux*.repo|\
-        oracle*.repo|rocky*.repo|epel*.repo|baseos*.repo|\
-        appstream*.repo|extras*.repo|powertools*.repo|crb*.repo)
-          echo "Keeping: $filename"
-          ;;
-        *)
-          echo "Disabling: $filename"
-          dnf config-manager --disable $(basename $repo .repo) 2>/dev/null || \
-          sed -i 's/^enabled=1/enabled=0/g' $repo
-          ;;
-      esac
+      if grep -qi "netdata" "$repo" 2>/dev/null; then
+        echo "Disabling netdata repo: $repo"
+        sed -i 's/^enabled=1/enabled=0/g' "$repo"
+        dnf config-manager --disable $(basename $repo .repo) 2>/dev/null || true
+      fi
+    done
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+  ignore_errors: yes
+
+- name: Disable pgdg broken repos (RHEL)
+  shell: |
+    for repo in /etc/yum.repos.d/*.repo; do
+      if grep -qi "pgdg" "$repo" 2>/dev/null; then
+        echo "Disabling pgdg repo: $repo"
+        sed -i 's/^enabled=1/enabled=0/g' "$repo"
+        dnf config-manager --disable $(basename $repo .repo) 2>/dev/null || true
+      fi
     done
   when: ansible_os_family == "RedHat"
   changed_when: false
@@ -38,8 +43,18 @@
   ignore_errors: yes
 
 # ─────────────────────────────────────────
-# Ubuntu/Debian - Fix broken repos
+# Ubuntu/Debian
 # ─────────────────────────────────────────
+- name: Remove netdata apt repo if exists (Debian)
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/netdata.list
+    - /etc/apt/sources.list.d/netdata-edge.list
+  when: ansible_os_family == "Debian"
+  ignore_errors: yes
+
 - name: Clean apt cache (Debian)
   command: apt-get clean
   when: ansible_os_family == "Debian"
