@@ -1,0 +1,29 @@
+---
+- name: Clean dnf cache (RHEL)
+  command: dnf clean all
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+  ignore_errors: yes
+
+- name: Disable broken third party repos (RHEL)
+  shell: |
+    for repo in /etc/yum.repos.d/*.repo; do
+      if ! dnf repoinfo $(basename $repo .repo) &>/dev/null; then
+        dnf config-manager --disable $(basename $repo .repo) 2>/dev/null || true
+      fi
+    done
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+  ignore_errors: yes
+
+- name: Clean apt cache (Debian)
+  command: apt-get clean
+  when: ansible_os_family == "Debian"
+  changed_when: false
+  ignore_errors: yes
+
+- name: Fix broken apt packages (Debian)
+  command: apt-get install -f -y
+  when: ansible_os_family == "Debian"
+  changed_when: false
+  ignore_errors: yes

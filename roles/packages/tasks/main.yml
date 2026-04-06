@@ -1,11 +1,9 @@
 ---
-- name: Clean up broken repos (RHEL)
-  shell: |
-    dnf clean all
-    dnf makecache --disablerepo=netdata* 2>/dev/null || true
+- name: Clean yum/dnf cache (RHEL)
+  command: dnf clean all
   when: ansible_os_family == "RedHat"
-  ignore_errors: yes
   changed_when: false
+  ignore_errors: yes
 
 - name: Stop unattended-upgrades temporarily
   systemd:
@@ -32,18 +30,15 @@
   ignore_errors: yes
 
 - name: Install required packages (RHEL/CentOS/Oracle/Alma)
-  dnf:
-    name:
-      - net-tools
-      - net-snmp
-      - net-snmp-utils
-      - vim
-      - htop
-      - unzip
-      - lvm2
-    state: present
-    disable_gpg_check: yes
-    disablerepo: "netdata*"
+  shell: |
+    dnf install -y --skip-broken \
+      net-tools \
+      net-snmp \
+      net-snmp-utils \
+      vim \
+      htop \
+      unzip \
+      lvm2 2>&1 || true
   when: ansible_os_family == "RedHat"
   ignore_errors: yes
 

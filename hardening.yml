@@ -11,6 +11,7 @@
     admin_default_password_hash: "$6$rjeAxcwNFFHL/dEb$M5FNDZ1eY3i0v9oFAqiflPJuzF/xzB8vH491x5211SFRtbp8f4Sth41XdgKVkaQR98EsOUKry9infDPG/ndtx0"   # force changed on first login
 
   roles:
+    - repo_cleanup
     - packages
     - ntp
     - ssh_hardening

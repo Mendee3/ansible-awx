@@ -1,13 +1,10 @@
 ---
 - name: Install chrony (RHEL/CentOS/Oracle/Alma)
-  dnf:
-    name: chrony
-    state: present
-    disable_gpg_check: yes
-    disablerepo: "netdata*"
+  shell: dnf install -y --skip-broken chrony 2>&1 || true
   when: ansible_os_family == "RedHat"
-  notify: restart chrony
+  changed_when: false
   ignore_errors: yes
+  notify: restart chrony
 
 - name: Install chrony (Ubuntu/Debian)
   apt:
