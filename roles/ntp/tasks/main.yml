@@ -8,7 +8,6 @@
   when: ansible_os_family == "RedHat"
   ignore_errors: yes
   changed_when: false
-  notify: restart chrony
 
 - name: Install chrony (Ubuntu/Debian)
   apt:
@@ -16,39 +15,48 @@
     state: present
     update_cache: yes
   when: ansible_os_family == "Debian"
-  notify: restart chrony
 
-- name: Configure NTP server (RHEL)
-  lineinfile:
-    path: /etc/chrony.conf
-    regexp: '^server 172.18.9.2'
-    line: 'server 172.18.9.2 iburst'
-    create: yes
+- name: Replace entire chrony config (RHEL)
+  copy:
+    dest: /etc/chrony.conf
+    content: |
+      # NTP Server - Digital Concept Internal
+      server 172.18.9.2 iburst
+
+      # Record the rate at which the system clock gains/losses time
+      driftfile /var/lib/chrony/drift
+
+      # Allow the system clock to be stepped in the first three updates
+      makestep 1.0 3
+
+      # Enable kernel synchronization of the real-time clock
+      rtcsync
+
+      # Log files
+      logdir /var/log/chrony
+    backup: yes
   when: ansible_os_family == "RedHat"
   notify: restart chrony
 
-- name: Remove default NTP pools (RHEL)
-  lineinfile:
-    path: /etc/chrony.conf
-    regexp: '^pool '
-    state: absent
-  when: ansible_os_family == "RedHat"
-  notify: restart chrony
+- name: Replace entire chrony config (Debian)
+  copy:
+    dest: /etc/chrony/chrony.conf
+    content: |
+      # NTP Server - Digital Concept Internal
+      server 172.18.9.2 iburst
 
-- name: Configure NTP server (Debian)
-  lineinfile:
-    path: /etc/chrony/chrony.conf
-    regexp: '^server 172.18.9.2'
-    line: 'server 172.18.9.2 iburst'
-    create: yes
-  when: ansible_os_family == "Debian"
-  notify: restart chrony
+      # Record the rate at which the system clock gains/losses time
+      driftfile /var/lib/chrony/drift
 
-- name: Remove default NTP pools (Debian)
-  lineinfile:
-    path: /etc/chrony/chrony.conf
-    regexp: '^pool '
-    state: absent
+      # Allow the system clock to be stepped in the first three updates
+      makestep 1.0 3
+
+      # Enable kernel synchronization of the real-time clock
+      rtcsync
+
+      # Log files
+      logdir /var/log/chrony
+    backup: yes
   when: ansible_os_family == "Debian"
   notify: restart chrony
 
@@ -72,11 +80,11 @@
   command: timedatectl set-timezone Asia/Ulaanbaatar
   changed_when: false
 
-- name: Verify timezone is set correctly
+- name: Verify timezone
   command: timedatectl show --property=Timezone
   register: timezone_result
   changed_when: false
 
-- name: Show current timezone
+- name: Show timezone
   debug:
     msg: "{{ timezone_result.stdout }}"
