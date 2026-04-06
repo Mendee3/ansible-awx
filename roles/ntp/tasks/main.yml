@@ -1,19 +1,21 @@
 ---
 - name: Install chrony (RHEL/CentOS/Oracle/Alma)
-  shell: |
-    dnf install -y \
-      --disablerepo="*" \
-      --enablerepo="baseos,appstream,extras,crb,ol9_baseos_latest,ol9_appstream,almalinux*,rhel*" \
-      chrony 2>&1
+  package:
+    name: chrony
+    state: present
   when: ansible_os_family == "RedHat"
   ignore_errors: yes
-  changed_when: false
 
 - name: Install chrony (Ubuntu/Debian)
   apt:
     name: chrony
     state: present
     update_cache: yes
+    lock_timeout: 300
+  retries: 3
+  delay: 30
+  register: apt_result
+  until: apt_result is success
   when: ansible_os_family == "Debian"
 
 - name: Replace entire chrony config (RHEL)
