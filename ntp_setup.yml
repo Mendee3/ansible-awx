@@ -1,0 +1,7 @@
+---
+- name: NTP Setup - Digital Concept
+  hosts: all
+  become: yes
+
+  roles:
+    - ntp
