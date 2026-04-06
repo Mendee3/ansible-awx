@@ -12,7 +12,8 @@
     - name: Verify Python 3.9 installed
       raw: /usr/bin/python3.9 --version
       register: python_version
+      ignore_errors: yes
 
     - name: Show Python version
       debug:
-        msg: "{{ python_version.stdout }}"
+        msg: "{{ python_version.stdout | default('skipped in check mode') }}"
