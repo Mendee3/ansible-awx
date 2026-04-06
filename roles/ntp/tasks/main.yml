@@ -4,6 +4,7 @@
     name: chrony
     state: present
   when: ansible_os_family == "RedHat"
+  notify: restart chrony
 
 - name: Install chrony (Ubuntu/Debian)
   apt:
@@ -11,11 +12,12 @@
     state: present
     update_cache: yes
   when: ansible_os_family == "Debian"
+  notify: restart chrony
 
 - name: Configure NTP server (RHEL)
   lineinfile:
     path: /etc/chrony.conf
-    regexp: '^server '
+    regexp: '^server 172.18.9.2'
     line: 'server 172.18.9.2 iburst'
     create: yes
   when: ansible_os_family == "RedHat"
@@ -32,7 +34,7 @@
 - name: Configure NTP server (Debian)
   lineinfile:
     path: /etc/chrony/chrony.conf
-    regexp: '^server '
+    regexp: '^server 172.18.9.2'
     line: 'server 172.18.9.2 iburst'
     create: yes
   when: ansible_os_family == "Debian"
@@ -46,14 +48,15 @@
   when: ansible_os_family == "Debian"
   notify: restart chrony
 
-- name: Enable and start chrony
+- name: Enable and start chrony (RHEL)
   systemd:
     name: chronyd
     enabled: yes
     state: started
+  when: ansible_os_family == "RedHat"
   ignore_errors: yes
 
-- name: Enable and start chrony (Debian service name)
+- name: Enable and start chrony (Debian)
   systemd:
     name: chrony
     enabled: yes

@@ -133,8 +133,10 @@
     - cups
     - nfs
     - rpcbind
+    - telnet
     - vsftpd
     - dovecot
     - samba
   ignore_errors: yes
-
+  register: service_result
+  when: "ansible_facts.services[item + '.service'] is defined"
