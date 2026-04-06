@@ -1,9 +1,13 @@
 ---
 - name: Install chrony (RHEL/CentOS/Oracle/Alma)
-  shell: dnf install -y --skip-broken chrony 2>&1 || true
+  shell: |
+    dnf install -y \
+      --disablerepo="*" \
+      --enablerepo="baseos,appstream,extras,crb,ol9_baseos_latest,ol9_appstream,almalinux*,rhel*" \
+      chrony 2>&1
   when: ansible_os_family == "RedHat"
-  changed_when: false
   ignore_errors: yes
+  changed_when: false
   notify: restart chrony
 
 - name: Install chrony (Ubuntu/Debian)

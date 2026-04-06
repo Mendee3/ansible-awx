@@ -31,16 +31,19 @@
 
 - name: Install required packages (RHEL/CentOS/Oracle/Alma)
   shell: |
-    dnf install -y --skip-broken \
+    dnf install -y \
+      --disablerepo="*" \
+      --enablerepo="baseos,appstream,extras,crb,ol9_baseos_latest,ol9_appstream,almalinux*,rhel*" \
       net-tools \
       net-snmp \
       net-snmp-utils \
       vim \
       htop \
       unzip \
-      lvm2 2>&1 || true
+      lvm2 2>&1
   when: ansible_os_family == "RedHat"
   ignore_errors: yes
+  changed_when: false
 
 - name: Wait for apt lock to be released
   shell: |
