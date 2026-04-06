@@ -1,50 +1,17 @@
 ---
-# ─────────────────────────────────────────
-# RHEL/CentOS/Oracle/Alma - Disable broken
-# and unwanted third party repos
-# ─────────────────────────────────────────
-- name: Find all repo files (RHEL)
-  find:
-    paths: /etc/yum.repos.d/
-    patterns: "*.repo"
-  register: repo_files
-  when: ansible_os_family == "RedHat"
-
-- name: Disable netdata repos (RHEL)
+- name: Remove broken third party repo files (RHEL)
   shell: |
     for repo in /etc/yum.repos.d/*.repo; do
-      if grep -qi "netdata" "$repo" 2>/dev/null; then
-        echo "Disabling netdata repo: $repo"
-        sed -i 's/^enabled=1/enabled=0/g' "$repo"
-        dnf config-manager --disable $(basename $repo .repo) 2>/dev/null || true
+      if grep -qiE "netdata|pgdg|enterprisedb" "$repo" 2>/dev/null; then
+        echo "Removing: $repo"
+        rm -f "$repo"
       fi
     done
+    dnf clean all 2>/dev/null || true
   when: ansible_os_family == "RedHat"
   changed_when: false
   ignore_errors: yes
 
-- name: Disable pgdg broken repos (RHEL)
-  shell: |
-    for repo in /etc/yum.repos.d/*.repo; do
-      if grep -qi "pgdg" "$repo" 2>/dev/null; then
-        echo "Disabling pgdg repo: $repo"
-        sed -i 's/^enabled=1/enabled=0/g' "$repo"
-        dnf config-manager --disable $(basename $repo .repo) 2>/dev/null || true
-      fi
-    done
-  when: ansible_os_family == "RedHat"
-  changed_when: false
-  ignore_errors: yes
-
-- name: Clean dnf cache (RHEL)
-  command: dnf clean all
-  when: ansible_os_family == "RedHat"
-  changed_when: false
-  ignore_errors: yes
-
-# ─────────────────────────────────────────
-# Ubuntu/Debian
-# ─────────────────────────────────────────
 - name: Remove netdata apt repo if exists (Debian)
   file:
     path: "{{ item }}"
@@ -53,16 +20,4 @@
     - /etc/apt/sources.list.d/netdata.list
     - /etc/apt/sources.list.d/netdata-edge.list
   when: ansible_os_family == "Debian"
-  ignore_errors: yes
-
-- name: Clean apt cache (Debian)
-  command: apt-get clean
-  when: ansible_os_family == "Debian"
-  changed_when: false
-  ignore_errors: yes
-
-- name: Fix broken apt packages (Debian)
-  command: apt-get install -f -y
-  when: ansible_os_family == "Debian"
-  changed_when: false
   ignore_errors: yes
