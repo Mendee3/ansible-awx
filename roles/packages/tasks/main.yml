@@ -29,11 +29,11 @@
   when: ansible_os_family == "Debian"
   ignore_errors: yes
 
-- name: Install required packages (RHEL/CentOS/Oracle/Alma)
+- name: Install required packages (AlmaLinux)
   shell: |
     dnf install -y \
       --disablerepo="*" \
-      --enablerepo="baseos,appstream,extras,crb,ol9_baseos_latest,ol9_appstream,almalinux*,rhel*" \
+      --enablerepo="baseos,appstream,extras,crb,almalinux*" \
       net-tools \
       net-snmp \
       net-snmp-utils \
@@ -41,7 +41,39 @@
       htop \
       unzip \
       lvm2 2>&1
-  when: ansible_os_family == "RedHat"
+  when: ansible_distribution == "AlmaLinux"
+  ignore_errors: yes
+  changed_when: false
+
+- name: Install required packages (Oracle Linux)
+  shell: |
+    dnf install -y \
+      --disablerepo="*" \
+      --enablerepo="baseos,appstream,ol9_baseos_latest,ol9_appstream" \
+      net-tools \
+      net-snmp \
+      net-snmp-utils \
+      vim \
+      htop \
+      unzip \
+      lvm2 2>&1
+  when: ansible_distribution == "OracleLinux"
+  ignore_errors: yes
+  changed_when: false
+
+- name: Install required packages (RHEL/CentOS)
+  shell: |
+    dnf install -y \
+      --disablerepo="*" \
+      --enablerepo="baseos,appstream,extras,crb,rhel*" \
+      net-tools \
+      net-snmp \
+      net-snmp-utils \
+      vim \
+      htop \
+      unzip \
+      lvm2 2>&1
+  when: ansible_os_family == "RedHat" and ansible_distribution not in ["AlmaLinux", "OracleLinux"]
   ignore_errors: yes
   changed_when: false
 
