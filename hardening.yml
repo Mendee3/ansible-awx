@@ -21,14 +21,21 @@
     - cis_benchmark
 
   post_tasks:
-    - name: Pause for admin user verification before locking scloud
+    - name: Pause - verify admin SSH access before locking scloud
       pause:
         prompt: |
-          Admin users created. Please verify SSH access with:
-            admin_mendjargal  from 10.32.11.102
-            admin_yusunerdene from 10.32.10.32
-            admin_bilegsaikhan from 10.32.10.162
-          Press Enter to continue and lock scloud, or Ctrl+C to abort.
+          Admin users are created. SSH is open with NO IP restriction yet.
+          Please verify each admin can log in with their default password:
+            ssh admin_mendjargal@<server-ip>
+            ssh admin_yusunerdene@<server-ip>
+            ssh admin_bilegsaikhan@<server-ip>
+          Press Enter to apply per-IP restrictions and lock scloud, or Ctrl+C to abort.
+
+    - name: Apply per-user per-IP SSH restriction
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowUsers'
+        line: 'AllowUsers admin_mendjargal@10.32.11.102 admin_yusunerdene@10.32.10.32 admin_bilegsaikhan@10.32.10.162'
 
     - name: Lock scloud shell (disable interactive login)
       command: usermod -s /sbin/nologin scloud
@@ -38,13 +45,7 @@
         name: scloud
         password_lock: yes
 
-    - name: Remove scloud from SSH AllowUsers
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^AllowUsers'
-        line: 'AllowUsers admin_mendjargal@10.32.11.102 admin_yusunerdene@10.32.10.32 admin_bilegsaikhan@10.32.10.162'
-
-    - name: Restart SSH after scloud removal
+    - name: Restart SSH to apply final restrictions
       systemd:
         name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
         state: restarted
