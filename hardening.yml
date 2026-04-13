@@ -2,18 +2,54 @@
 - name: Server Hardening Playbook
   hosts: all
   become: yes
+  remote_user: scloud
+
+  vars_prompt:
+    - name: ansible_password
+      prompt: "Enter scloud password"
+      private: yes
 
   vars:
     admin_users:
       - admin_mendjargal
       - admin_yusunerdene
       - admin_bilegsaikhan
-    admin_default_password_hash: "$6$rjeAxcwNFFHL/dEb$M5FNDZ1eY3i0v9oFAqiflPJuzF/xzB8vH491x5211SFRtbp8f4Sth41XdgKVkaQR98EsOUKry9infDPG/ndtx0"   # force changed on first login
+    admin_default_password_hash: "$6$Gr0DVDnjxnICa9z0$khljvhytg2qnyUxDVEOwmbqq2mb3CaI4jb3kmZDqtzC9RSRepdxxsTnBD7jyP80Bx.BSNNItAK4ZuSCWGANPa."
 
   roles:
     - repo_cleanup
     - packages
-    - ssh_hardening
-    - cis_benchmark
+    - ntp
     - password_policy
     - admin_users
+    - ssh_hardening
+    - cis_benchmark
+
+  post_tasks:
+    - name: Pause for admin user verification before locking scloud
+      pause:
+        prompt: |
+          Admin users created. Please verify SSH access with:
+            admin_mendjargal  from 10.32.11.102
+            admin_yusunerdene from 10.32.10.32
+            admin_bilegsaikhan from 10.32.10.162
+          Press Enter to continue and lock scloud, or Ctrl+C to abort.
+
+    - name: Lock scloud shell (disable interactive login)
+      command: usermod -s /sbin/nologin scloud
+
+    - name: Lock scloud password
+      user:
+        name: scloud
+        password_lock: yes
+
+    - name: Remove scloud from SSH AllowUsers
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowUsers'
+        line: 'AllowUsers admin_mendjargal@10.32.11.102 admin_yusunerdene@10.32.10.32 admin_bilegsaikhan@10.32.10.162'
+
+    - name: Restart SSH after scloud removal
+      systemd:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: restarted

@@ -1,14 +1,17 @@
 ---
-- name: Lock scloud account
+- name: Lock scloud shell (disable interactive login)
+  command: usermod -s /sbin/nologin scloud
+
+- name: Lock scloud password
   user:
     name: scloud
     password_lock: yes
 
-- name: Remove scloud from AllowUsers in sshd (replaced by admin users)
+- name: Remove scloud from SSH AllowUsers (per-IP restrictions only)
   lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^AllowUsers'
-    line: 'AllowUsers admin_mendjargal admin_yusunerdene admin_bilegsaikhan'
+    line: 'AllowUsers admin_mendjargal@10.32.11.102 admin_yusunerdene@10.32.10.32 admin_bilegsaikhan@10.32.10.162'
 
 - name: Restart SSH after scloud removal
   systemd:

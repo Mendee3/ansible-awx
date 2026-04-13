@@ -48,11 +48,11 @@
     regexp: '^#?Ciphers'
     line: 'Ciphers aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
 
-- name: Restrict SSH to admin users and scloud only
+- name: Restrict SSH per-user per-IP (scloud unrestricted during setup)
   lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^#?AllowUsers'
-    line: 'AllowUsers admin_mendjargal admin_yusunerdene admin_bilegsaikhan scloud'
+    line: 'AllowUsers admin_mendjargal@10.32.11.102 admin_yusunerdene@10.32.10.32 admin_bilegsaikhan@10.32.10.162 scloud'
 
 - name: Restart SSH service
   systemd:
