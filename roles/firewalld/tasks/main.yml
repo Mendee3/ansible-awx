@@ -31,6 +31,12 @@
     --add-rich-rule='rule family="ipv4" source address="172.18.9.70" service name="ssh" accept'
   changed_when: false
 
+- name: Allow Zabbix server to reach agent port 10050 (172.18.9.70)
+  command: >
+    firewall-offline-cmd --zone=public
+    --add-rich-rule='rule family="ipv4" source address="172.18.9.70" port port="10050" protocol="tcp" accept'
+  changed_when: false
+
 - name: Confirm firewalld rules staged (service still stopped)
   debug:
     msg: "firewalld rules configured on {{ inventory_hostname }}. Run 'systemctl enable --now firewalld' to activate."
