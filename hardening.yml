@@ -4,11 +4,6 @@
   become: yes
   remote_user: scloud
 
-  vars_prompt:
-    - name: ansible_password
-      prompt: "Enter scloud password"
-      private: yes
-
   vars:
     admin_users:
       - admin_mendjargal
