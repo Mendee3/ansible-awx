@@ -153,3 +153,44 @@
     lock_timeout: 300
   when: ansible_os_family == "Debian"
   ignore_errors: yes
+
+- name: Check if reboot is required (RHEL)
+  command: needs-restarting -r
+  register: reboot_required_rhel
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+
+- name: Check if reboot is required (Debian)
+  stat:
+    path: /var/run/reboot-required
+  register: reboot_required_debian
+  when: ansible_os_family == "Debian"
+
+- name: Print reboot status (RHEL)
+  debug:
+    msg: "REBOOT REQUIRED on {{ inventory_hostname }} — kernel or core libraries updated"
+  when:
+    - ansible_os_family == "RedHat"
+    - reboot_required_rhel.rc == 1
+
+- name: Print reboot status (Debian)
+  debug:
+    msg: "REBOOT REQUIRED on {{ inventory_hostname }} — kernel or core libraries updated"
+  when:
+    - ansible_os_family == "Debian"
+    - reboot_required_debian.stat.exists
+
+- name: Print no reboot needed (RHEL)
+  debug:
+    msg: "No reboot required on {{ inventory_hostname }}"
+  when:
+    - ansible_os_family == "RedHat"
+    - reboot_required_rhel.rc == 0
+
+- name: Print no reboot needed (Debian)
+  debug:
+    msg: "No reboot required on {{ inventory_hostname }}"
+  when:
+    - ansible_os_family == "Debian"
+    - not reboot_required_debian.stat.exists
