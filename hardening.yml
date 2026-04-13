@@ -18,6 +18,7 @@
     - password_policy
     - admin_users
     - ssh_hardening
+    - firewalld
     - cis_benchmark
 
   # After this job completes:

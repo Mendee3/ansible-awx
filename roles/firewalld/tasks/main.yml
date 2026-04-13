@@ -1,0 +1,36 @@
+---
+# Configures firewalld rules using firewall-offline-cmd
+# Service is NOT started here - rules are pre-staged and apply when manually started
+
+- name: Remove SSH from public zone (restrict open access)
+  command: firewall-offline-cmd --zone=public --remove-service=ssh
+  failed_when: false
+  changed_when: false
+
+- name: Allow SSH from admin_mendjargal (10.32.11.102)
+  command: >
+    firewall-offline-cmd --zone=public
+    --add-rich-rule='rule family="ipv4" source address="10.32.11.102" service name="ssh" accept'
+  changed_when: false
+
+- name: Allow SSH from admin_yusunerdene (10.32.10.32)
+  command: >
+    firewall-offline-cmd --zone=public
+    --add-rich-rule='rule family="ipv4" source address="10.32.10.32" service name="ssh" accept'
+  changed_when: false
+
+- name: Allow SSH from admin_bilegsaikhan (10.32.10.162)
+  command: >
+    firewall-offline-cmd --zone=public
+    --add-rich-rule='rule family="ipv4" source address="10.32.10.162" service name="ssh" accept'
+  changed_when: false
+
+- name: Allow SSH from AWX management server (172.18.9.70)
+  command: >
+    firewall-offline-cmd --zone=public
+    --add-rich-rule='rule family="ipv4" source address="172.18.9.70" service name="ssh" accept'
+  changed_when: false
+
+- name: Confirm firewalld rules staged (service still stopped)
+  debug:
+    msg: "firewalld rules configured on {{ inventory_hostname }}. Run 'systemctl enable --now firewalld' to activate."
