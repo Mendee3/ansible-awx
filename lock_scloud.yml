@@ -1,30 +1,24 @@
 ---
-- name: Lock scloud Account
+- name: Apply per-IP SSH restrictions and lock scloud
   hosts: all
   become: yes
 
   tasks:
-    - name: Confirm scloud is not used by any service
-      shell: "ps aux | grep scloud | grep -v grep"
-      register: scloud_processes
-      ignore_errors: yes
+    - name: Apply per-user per-IP SSH restriction
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowUsers'
+        line: 'AllowUsers admin_mendjargal@10.32.11.102 admin_yusunerdene@10.32.10.32 admin_bilegsaikhan@10.32.10.162'
 
-    - name: Show scloud processes
-      debug:
-        msg: "{{ scloud_processes.stdout_lines }}"
+    - name: Lock scloud shell (disable interactive login)
+      command: usermod -s /sbin/nologin scloud
 
-    - name: Lock scloud account
+    - name: Lock scloud password
       user:
         name: scloud
         password_lock: yes
 
-    - name: Remove scloud from AllowUsers in sshd
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^AllowUsers'
-        line: 'AllowUsers admin_mendjargal admin_yusunerdene admin_bilegsaikhan'
-
-    - name: Restart SSH after scloud removal
+    - name: Restart SSH to apply final restrictions
       systemd:
         name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
         state: restarted
