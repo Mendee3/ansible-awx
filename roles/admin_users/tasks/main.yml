@@ -46,7 +46,7 @@
     mode: '0440'
     validate: 'visudo -cf %s'
 
-- name: Add admin users and scloud to sshgroup
+- name: Add admin users to sshgroup
   user:
     name: "{{ item }}"
     groups: sshgroup
@@ -55,8 +55,19 @@
     - admin_mendjargal
     - admin_yusunerdene
     - admin_bilegsaikhan
-    - scloud
-  ignore_errors: yes
+
+- name: Check if scloud user exists
+  command: id scloud
+  register: scloud_check
+  changed_when: false
+  failed_when: false
+
+- name: Add scloud to sshgroup (only if user exists)
+  user:
+    name: scloud
+    groups: sshgroup
+    append: yes
+  when: scloud_check.rc == 0
 
 - name: Force password change on first login
   command: chage -d 0 {{ item }}
@@ -77,6 +88,8 @@
     user: "{{ item }}"
     state: present
     key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFawq1WbPc4sDOrrTy7iKOHjwU3xLO0yDAO/SyQyuJPI ansible-awx"
+    path: "/home/{{ item }}/.ssh/authorized_keys"
+    manage_dir: yes
   loop:
     - admin_mendjargal
     - admin_yusunerdene

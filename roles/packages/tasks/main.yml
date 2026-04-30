@@ -122,8 +122,22 @@
   ignore_errors: yes
 
 - name: Install Zabbix repo (Ubuntu/Debian)
-  apt:
-    deb: "https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu{{ ansible_distribution_version }}_all.deb"
+  shell: |
+    UBUNTU_VER="{{ ansible_distribution_version }}"
+    ZBX_BASE="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release"
+    for VER in "${UBUNTU_VER}" "24.04"; do
+      URL="${ZBX_BASE}/zabbix-release_latest_7.4+ubuntu${VER}_all.deb"
+      if wget -q --spider "${URL}" 2>/dev/null; then
+        wget -q "${URL}" -O /tmp/zabbix-release.deb
+        dpkg -i /tmp/zabbix-release.deb
+        apt-get update -y
+        exit 0
+      fi
+    done
+    echo "Warning: no Zabbix repo found for Ubuntu ${UBUNTU_VER}, falling back to distro package"
+    exit 0
+  args:
+    creates: /etc/apt/sources.list.d/zabbix.list
   when: ansible_os_family == "Debian"
   ignore_errors: yes
 
@@ -140,6 +154,7 @@
     name: zabbix-agent
     enabled: yes
     state: started
+    daemon_reload: yes
   ignore_errors: yes
 
 - name: Full system update (RHEL)

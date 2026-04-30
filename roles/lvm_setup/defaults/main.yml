@@ -1,0 +1,22 @@
+---
+# Volume group name to create
+lvm_vg_name: vg_system
+
+# List of block devices to use as physical volumes.
+# Example: ['/dev/sdb', '/dev/sdc']
+# Leave empty to auto-detect unpartitioned disks.
+lvm_pvs: []
+
+# Auto-detect disks that have no partition table and are not the boot/root disk.
+# Only used when lvm_pvs is empty.
+lvm_auto_detect: true
+
+# Logical volumes to create inside the VG.
+# size: LVM size notation — e.g. "10G", "512M", "100%FREE", "50%VG"
+# fstype: xfs (default) or ext4
+# mount_point: absolute path where the LV will be mounted
+lvm_logical_volumes:
+  - name: lv_data
+    size: "100%FREE"
+    mount_point: /data
+    fstype: xfs

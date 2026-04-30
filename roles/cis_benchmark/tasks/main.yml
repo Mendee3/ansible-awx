@@ -47,9 +47,13 @@
     name: "{{ 'auditd' if ansible_os_family == 'Debian' else 'audit' }}"
     state: present
 
-- name: CIS 4.1 - Enable auditd
+- name: CIS 4.1 - Reload systemd daemon after auditd install
   systemd:
-    name: "{{ 'auditd' if ansible_os_family == 'Debian' else 'auditd' }}"
+    daemon_reload: yes
+
+- name: CIS 4.1 - Enable auditd
+  service:
+    name: auditd
     enabled: yes
     state: started
   ignore_errors: yes

@@ -9,9 +9,18 @@
 
 - name: Install Zabbix repo and agent (Ubuntu/Debian)
   shell: |
-    wget -q https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu24.04_all.deb -O /tmp/zabbix-release.deb
-    dpkg -i /tmp/zabbix-release.deb
-    apt-get update -y
+    UBUNTU_VER="{{ ansible_distribution_version }}"
+    ZBX_BASE="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release"
+    for VER in "${UBUNTU_VER}" "24.04"; do
+      URL="${ZBX_BASE}/zabbix-release_latest_7.4+ubuntu${VER}_all.deb"
+      if wget -q --spider "${URL}" 2>/dev/null; then
+        wget -q "${URL}" -O /tmp/zabbix-release.deb
+        dpkg -i /tmp/zabbix-release.deb
+        apt-get update -y
+        apt-get install -y zabbix-agent
+        exit 0
+      fi
+    done
     apt-get install -y zabbix-agent
   when: ansible_os_family == "Debian"
   ignore_errors: yes
@@ -40,7 +49,16 @@
     group: zabbix
     mode: '0755'
 
-- name: Deploy Zabbix agent config
+- name: Replace main zabbix_agentd.conf with Include-only
+  copy:
+    content: "Include=/etc/zabbix/zabbix_agentd.conf.d/*.conf\n"
+    dest: /etc/zabbix/zabbix_agentd.conf
+    owner: root
+    group: zabbix
+    mode: '0640'
+  notify: restart zabbix-agent
+
+- name: Deploy Zabbix agent drop-in config
   template:
     src: zabbix_agentd.conf.j2
     dest: /etc/zabbix/zabbix_agentd.conf.d/zabbix.conf

@@ -79,14 +79,15 @@
   ignore_errors: yes
 
 - name: Set timezone to Asia/Ulaanbaatar (UTC+8)
-  command: timedatectl set-timezone Asia/Ulaanbaatar
-  changed_when: false
+  timezone:
+    name: Asia/Ulaanbaatar
 
 - name: Verify timezone
   command: timedatectl show --property=Timezone
   register: timezone_result
   changed_when: false
+  ignore_errors: yes
 
 - name: Show timezone
   debug:
-    msg: "{{ timezone_result.stdout }}"
+    msg: "{{ timezone_result.stdout | default('') }}"

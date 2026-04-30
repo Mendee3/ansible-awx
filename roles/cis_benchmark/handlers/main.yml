@@ -1,6 +1,6 @@
 ---
 - name: restart auditd
-  systemd:
+  service:
     name: auditd
     state: restarted
   ignore_errors: yes

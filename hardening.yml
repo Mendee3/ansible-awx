@@ -14,6 +14,7 @@
   roles:
     - repo_cleanup
     - packages
+    - lvm_setup
     - ntp
     - password_policy
     - admin_users
