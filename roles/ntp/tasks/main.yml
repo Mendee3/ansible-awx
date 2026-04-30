@@ -79,8 +79,8 @@
   ignore_errors: yes
 
 - name: Set timezone to Asia/Ulaanbaatar (UTC+8)
-  timezone:
-    name: Asia/Ulaanbaatar
+  command: timedatectl set-timezone Asia/Ulaanbaatar
+  changed_when: false
 
 - name: Verify timezone
   command: timedatectl show --property=Timezone
