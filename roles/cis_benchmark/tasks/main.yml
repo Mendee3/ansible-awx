@@ -119,12 +119,19 @@
     name: sudo
     state: present
 
-- name: CIS 5.3 - Ensure sudo log file exists
+- name: CIS 5.3 - Check sudo implementation
+  command: sudo --version
+  register: sudo_version_check
+  changed_when: false
+  failed_when: false
+
+- name: CIS 5.3 - Ensure sudo log file exists (traditional sudo only)
   lineinfile:
     path: /etc/sudoers
     regexp: '^Defaults.*logfile'
     line: 'Defaults logfile="/var/log/sudo.log"'
     validate: 'visudo -cf %s'
+  when: "'sudo-rs' not in (sudo_version_check.stdout | default(''))"
 
 # 5. Disable unnecessary services
 - name: CIS 2.1 - Disable unnecessary services
