@@ -1,182 +1,196 @@
 ---
-# ── 1. Verify lvm2 is present ─────────────────────────────────────────────────
-
-- name: Ensure lvm2 is installed
-  package:
-    name: lvm2
-    state: present
-
-# ── 2. Resolve physical volumes ───────────────────────────────────────────────
-
-- name: Gather block device info
-  command: lsblk -dno NAME,TYPE,MOUNTPOINT,FSTYPE --json
-  register: lsblk_output
+- name: Check if LVM is already configured
+  command: vgs --noheadings
+  register: vgs_existing
   changed_when: false
-  when: lvm_pvs | length == 0 and lvm_auto_detect
+  failed_when: false
 
-- name: Identify root disk name
-  shell: lsblk -no PKNAME $(findmnt -n -o SOURCE /) | head -1
-  register: root_disk_raw
-  changed_when: false
-  when: lvm_pvs | length == 0 and lvm_auto_detect
-
-- name: Find unpartitioned disks (exclude root disk and already-used devices)
-  shell: |
-    ROOT_DISK="{{ root_disk_raw.stdout | trim }}"
-    lsblk -dno NAME,TYPE,FSTYPE | while read NAME TYPE FSTYPE; do
-      [ "$TYPE" != "disk" ] && continue
-      [ "$NAME" = "$ROOT_DISK" ] && continue
-      [ -n "$FSTYPE" ] && continue
-      # Skip disks that already have partitions
-      PARTS=$(lsblk -no NAME "/dev/$NAME" | tail -n +2 | wc -l)
-      [ "$PARTS" -gt 0 ] && continue
-      echo "/dev/$NAME"
-    done
-  register: auto_detected_disks
-  changed_when: false
-  when: lvm_pvs | length == 0 and lvm_auto_detect
-
-- name: Set effective PV list
-  set_fact:
-    lvm_effective_pvs: >-
-      {{
-        lvm_pvs if lvm_pvs | length > 0
-        else (auto_detected_disks.stdout_lines | default([]))
-      }}
-
-- name: Abort if no physical volumes resolved
-  fail:
-    msg: >
-      No block devices found for LVM. Set lvm_pvs explicitly in inventory
-      or ensure unpartitioned disks are attached and lvm_auto_detect is true.
-  when: lvm_effective_pvs | length == 0
-
-- name: Show resolved physical volumes
+- name: Report existing LVM — skipping setup
   debug:
-    msg: "LVM physical volumes to use: {{ lvm_effective_pvs | join(', ') }}"
+    msg: "LVM already configured on this host ({{ vgs_existing.stdout_lines | map('trim') | select | join(', ') }}). Skipping lvm_setup."
+  when: vgs_existing.rc == 0 and vgs_existing.stdout | trim != ''
 
-# ── 3. Safety check — refuse to wipe disks that carry data ───────────────────
+- name: LVM provisioning
+  when: vgs_existing.rc != 0 or vgs_existing.stdout | trim == ''
+  block:
 
-- name: Check for existing filesystem or partition table on each target disk
-  command: blkid -p "{{ item }}"
-  register: blkid_check
-  changed_when: false
-  failed_when: false
-  loop: "{{ lvm_effective_pvs }}"
+    # ── 1. Verify lvm2 is present ───────────────────────────────────────────────
 
-- name: Abort if any target disk already carries a filesystem or partition table
-  fail:
-    msg: >
-      Disk {{ item.item }} already contains data (blkid exit {{ item.rc }},
-      output: "{{ item.stdout }}"). Remove it from lvm_pvs or wipe it manually
-      before running this role.
-  when: item.rc == 0 and item.stdout != ""
-  loop: "{{ blkid_check.results }}"
-  loop_control:
-    label: "{{ item.item }}"
+    - name: Ensure lvm2 is installed
+      package:
+        name: lvm2
+        state: present
 
-# ── 4. Create Physical Volumes ────────────────────────────────────────────────
+    # ── 2. Resolve physical volumes ─────────────────────────────────────────────
 
-- name: Create physical volumes
-  command: pvcreate "{{ item }}"
-  args:
-    creates: "{{ item }}"
-  register: pvcreate_result
-  changed_when: "'successfully created' in pvcreate_result.stdout"
-  loop: "{{ lvm_effective_pvs }}"
+    - name: Gather block device info
+      command: lsblk -dno NAME,TYPE,MOUNTPOINT,FSTYPE --json
+      register: lsblk_output
+      changed_when: false
+      when: lvm_pvs | length == 0 and lvm_auto_detect
 
-# ── 5. Create Volume Group ────────────────────────────────────────────────────
+    - name: Identify root disk name
+      shell: lsblk -no PKNAME $(findmnt -n -o SOURCE /) | head -1
+      register: root_disk_raw
+      changed_when: false
+      when: lvm_pvs | length == 0 and lvm_auto_detect
 
-- name: Check if volume group already exists
-  command: vgs "{{ lvm_vg_name }}"
-  register: vg_check
-  changed_when: false
-  failed_when: false
+    - name: Find unpartitioned disks (exclude root disk and already-used devices)
+      shell: |
+        ROOT_DISK="{{ root_disk_raw.stdout | trim }}"
+        lsblk -dno NAME,TYPE,FSTYPE | while read NAME TYPE FSTYPE; do
+          [ "$TYPE" != "disk" ] && continue
+          [ "$NAME" = "$ROOT_DISK" ] && continue
+          [ -n "$FSTYPE" ] && continue
+          PARTS=$(lsblk -no NAME "/dev/$NAME" | tail -n +2 | wc -l)
+          [ "$PARTS" -gt 0 ] && continue
+          echo "/dev/$NAME"
+        done
+      register: auto_detected_disks
+      changed_when: false
+      when: lvm_pvs | length == 0 and lvm_auto_detect
 
-- name: Create volume group
-  command: vgcreate "{{ lvm_vg_name }}" {{ lvm_effective_pvs | join(' ') }}
-  when: vg_check.rc != 0
+    - name: Set effective PV list
+      set_fact:
+        lvm_effective_pvs: >-
+          {{
+            lvm_pvs if lvm_pvs | length > 0
+            else (auto_detected_disks.stdout_lines | default([]))
+          }}
 
-# ── 6. Create Logical Volumes ─────────────────────────────────────────────────
+    - name: Abort if no physical volumes resolved
+      fail:
+        msg: >
+          No block devices found for LVM. Set lvm_pvs explicitly in inventory
+          or ensure unpartitioned disks are attached and lvm_auto_detect is true.
+      when: lvm_effective_pvs | length == 0
 
-- name: Check existing logical volumes
-  command: lvs --noheadings -o lv_name "{{ lvm_vg_name }}"
-  register: existing_lvs
-  changed_when: false
-  failed_when: false
+    - name: Show resolved physical volumes
+      debug:
+        msg: "LVM physical volumes to use: {{ lvm_effective_pvs | join(', ') }}"
 
-- name: Create logical volumes
-  command: >
-    lvcreate -n "{{ item.name }}"
-    {% if '%' in item.size %}
-    -l "{{ item.size }}"
-    {% else %}
-    -L "{{ item.size }}"
-    {% endif %}
-    "{{ lvm_vg_name }}"
-  when: item.name not in (existing_lvs.stdout_lines | map('trim') | list)
-  loop: "{{ lvm_logical_volumes }}"
-  loop_control:
-    label: "{{ item.name }} ({{ item.size }})"
+    # ── 3. Safety check — refuse to wipe disks that carry data ─────────────────
 
-# ── 7. Format Logical Volumes ─────────────────────────────────────────────────
+    - name: Check for existing filesystem or partition table on each target disk
+      command: blkid -p "{{ item }}"
+      register: blkid_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ lvm_effective_pvs }}"
 
-- name: Check filesystem on each logical volume
-  command: blkid -s TYPE -o value "/dev/{{ lvm_vg_name }}/{{ item.name }}"
-  register: lv_fs_check
-  changed_when: false
-  failed_when: false
-  loop: "{{ lvm_logical_volumes }}"
-  loop_control:
-    label: "{{ item.name }}"
+    - name: Abort if any target disk already carries a filesystem or partition table
+      fail:
+        msg: >
+          Disk {{ item.item }} already contains data (blkid exit {{ item.rc }},
+          output: "{{ item.stdout }}"). Remove it from lvm_pvs or wipe it manually
+          before running this role.
+      when: item.rc == 0 and item.stdout != ""
+      loop: "{{ blkid_check.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
-- name: Format logical volumes (xfs)
-  command: mkfs.xfs "/dev/{{ lvm_vg_name }}/{{ item.item.name }}"
-  when:
-    - item.item.fstype | default('xfs') == 'xfs'
-    - item.stdout == ""
-  loop: "{{ lv_fs_check.results }}"
-  loop_control:
-    label: "{{ item.item.name }}"
+    # ── 4. Create Physical Volumes ───────────────────────────────────────────────
 
-- name: Format logical volumes (ext4)
-  command: mkfs.ext4 "/dev/{{ lvm_vg_name }}/{{ item.item.name }}"
-  when:
-    - item.item.fstype | default('xfs') == 'ext4'
-    - item.stdout == ""
-  loop: "{{ lv_fs_check.results }}"
-  loop_control:
-    label: "{{ item.item.name }}"
+    - name: Create physical volumes
+      command: pvcreate "{{ item }}"
+      args:
+        creates: "{{ item }}"
+      register: pvcreate_result
+      changed_when: "'successfully created' in pvcreate_result.stdout"
+      loop: "{{ lvm_effective_pvs }}"
 
-# ── 8. Mount Logical Volumes and persist via fstab ───────────────────────────
+    # ── 5. Create Volume Group ───────────────────────────────────────────────────
 
-- name: Create mount point directories
-  file:
-    path: "{{ item.mount_point }}"
-    state: directory
-    mode: '0755'
-  loop: "{{ lvm_logical_volumes }}"
-  loop_control:
-    label: "{{ item.mount_point }}"
+    - name: Check if volume group already exists
+      command: vgs "{{ lvm_vg_name }}"
+      register: vg_check
+      changed_when: false
+      failed_when: false
 
-- name: Add LVs to /etc/fstab
-  mount:
-    path: "{{ item.mount_point }}"
-    src: "/dev/{{ lvm_vg_name }}/{{ item.name }}"
-    fstype: "{{ item.fstype | default('xfs') }}"
-    opts: defaults
-    state: mounted
-  loop: "{{ lvm_logical_volumes }}"
-  loop_control:
-    label: "{{ item.name }} → {{ item.mount_point }}"
+    - name: Create volume group
+      command: vgcreate "{{ lvm_vg_name }}" {{ lvm_effective_pvs | join(' ') }}
+      when: vg_check.rc != 0
 
-# ── 9. Report summary ─────────────────────────────────────────────────────────
+    # ── 6. Create Logical Volumes ────────────────────────────────────────────────
 
-- name: Show LVM layout summary
-  command: pvs && vgs && lvs
-  register: lvm_summary
-  changed_when: false
+    - name: Check existing logical volumes
+      command: lvs --noheadings -o lv_name "{{ lvm_vg_name }}"
+      register: existing_lvs
+      changed_when: false
+      failed_when: false
 
-- name: Print LVM summary
-  debug:
-    msg: "{{ lvm_summary.stdout_lines }}"
+    - name: Create logical volumes
+      command: >
+        lvcreate -n "{{ item.name }}"
+        {% if '%' in item.size %}
+        -l "{{ item.size }}"
+        {% else %}
+        -L "{{ item.size }}"
+        {% endif %}
+        "{{ lvm_vg_name }}"
+      when: item.name not in (existing_lvs.stdout_lines | map('trim') | list)
+      loop: "{{ lvm_logical_volumes }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.size }})"
+
+    # ── 7. Format Logical Volumes ────────────────────────────────────────────────
+
+    - name: Check filesystem on each logical volume
+      command: blkid -s TYPE -o value "/dev/{{ lvm_vg_name }}/{{ item.name }}"
+      register: lv_fs_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ lvm_logical_volumes }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Format logical volumes (xfs)
+      command: mkfs.xfs "/dev/{{ lvm_vg_name }}/{{ item.item.name }}"
+      when:
+        - item.item.fstype | default('xfs') == 'xfs'
+        - item.stdout == ""
+      loop: "{{ lv_fs_check.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Format logical volumes (ext4)
+      command: mkfs.ext4 "/dev/{{ lvm_vg_name }}/{{ item.item.name }}"
+      when:
+        - item.item.fstype | default('xfs') == 'ext4'
+        - item.stdout == ""
+      loop: "{{ lv_fs_check.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    # ── 8. Mount Logical Volumes and persist via fstab ──────────────────────────
+
+    - name: Create mount point directories
+      file:
+        path: "{{ item.mount_point }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ lvm_logical_volumes }}"
+      loop_control:
+        label: "{{ item.mount_point }}"
+
+    - name: Add LVs to /etc/fstab
+      mount:
+        path: "{{ item.mount_point }}"
+        src: "/dev/{{ lvm_vg_name }}/{{ item.name }}"
+        fstype: "{{ item.fstype | default('xfs') }}"
+        opts: defaults
+        state: mounted
+      loop: "{{ lvm_logical_volumes }}"
+      loop_control:
+        label: "{{ item.name }} → {{ item.mount_point }}"
+
+    # ── 9. Report summary ────────────────────────────────────────────────────────
+
+    - name: Show LVM layout summary
+      command: pvs && vgs && lvs
+      register: lvm_summary
+      changed_when: false
+
+    - name: Print LVM summary
+      debug:
+        msg: "{{ lvm_summary.stdout_lines }}"
