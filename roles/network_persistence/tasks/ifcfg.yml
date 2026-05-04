@@ -1,0 +1,31 @@
+---
+# Fallback for CentOS 7 / RHEL 7 systems where NetworkManager is not active
+- name: Check if ifcfg file exists for interface
+  stat:
+    path: "/etc/sysconfig/network-scripts/ifcfg-{{ current_interface }}"
+  register: ifcfg_stat
+
+- name: Set GATEWAY in existing ifcfg file
+  lineinfile:
+    path: "/etc/sysconfig/network-scripts/ifcfg-{{ current_interface }}"
+    regexp: '^GATEWAY='
+    line: "GATEWAY={{ current_gateway }}"
+    backup: yes
+  when: ifcfg_stat.stat.exists
+
+- name: Warn if ifcfg file is missing
+  debug:
+    msg: >
+      WARNING: /etc/sysconfig/network-scripts/ifcfg-{{ current_interface }} not found on
+      {{ inventory_hostname }}. Create it manually or investigate the network config.
+  when: not ifcfg_stat.stat.exists
+
+- name: Also set GATEWAY in /etc/sysconfig/network (legacy RHEL 6 style)
+  lineinfile:
+    path: /etc/sysconfig/network
+    regexp: '^GATEWAY='
+    line: "GATEWAY={{ current_gateway }}"
+    backup: yes
+    create: no
+  ignore_errors: yes
+  changed_when: false

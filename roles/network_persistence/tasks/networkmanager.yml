@@ -1,0 +1,38 @@
+---
+# Works on: RHEL 7+, CentOS 7+ (with NM), Oracle, Alma, Ubuntu 20.04+
+- name: Get active NM connection name for default interface
+  shell: "nmcli -t -f NAME,DEVICE con show --active | grep ':{{ current_interface }}$' | head -1 | cut -d: -f1"
+  register: nm_conn_name
+  changed_when: false
+
+- name: Warn if no NM connection found for interface
+  debug:
+    msg: "WARNING: No active NM connection found for {{ current_interface }} on {{ inventory_hostname }} — skipping."
+  when: nm_conn_name.stdout == ""
+
+- name: Check existing gateway in NM connection profile
+  shell: "nmcli -g ipv4.gateway con show '{{ nm_conn_name.stdout }}'"
+  register: nm_current_gw
+  changed_when: false
+  when: nm_conn_name.stdout != ""
+
+- name: Set persistent gateway in NM connection profile
+  command: "nmcli con mod '{{ nm_conn_name.stdout }}' ipv4.gateway {{ current_gateway }}"
+  register: nm_mod_result
+  when:
+    - nm_conn_name.stdout != ""
+    - nm_current_gw.stdout | trim != current_gateway
+
+- name: Confirm gateway persisted
+  debug:
+    msg: "Gateway {{ current_gateway }} saved to NM connection '{{ nm_conn_name.stdout }}' on {{ inventory_hostname }}"
+  when:
+    - nm_conn_name.stdout != ""
+    - nm_mod_result is changed
+
+- name: Already persisted (no change needed)
+  debug:
+    msg: "Gateway {{ current_gateway }} already set in NM connection '{{ nm_conn_name.stdout }}' on {{ inventory_hostname }}"
+  when:
+    - nm_conn_name.stdout != ""
+    - nm_mod_result is not changed

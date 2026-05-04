@@ -1,0 +1,75 @@
+---
+# Fallback for Ubuntu systems where NetworkManager is not running (uses netplan directly)
+- name: Find netplan config files
+  find:
+    paths: /etc/netplan
+    patterns: "*.yaml,*.yml"
+  register: netplan_files
+
+- name: Warn if no netplan files found
+  debug:
+    msg: "WARNING: No netplan config files found on {{ inventory_hostname }}."
+  when: netplan_files.files | length == 0
+
+- name: Persist default route in netplan config
+  shell: |
+    python3 << 'EOF'
+    import yaml, sys, os
+
+    iface = "{{ current_interface }}"
+    gateway = "{{ current_gateway }}"
+    files = sorted([f["path"] for f in {{ netplan_files.files | to_json }}])
+
+    # Find netplan file that defines our interface, or fall back to last file
+    target_file = files[-1] if files else None
+    for f in files:
+        with open(f) as fh:
+            data = yaml.safe_load(fh) or {}
+        ethernets = (data.get("network") or {}).get("ethernets") or {}
+        if iface in ethernets:
+            target_file = f
+            break
+
+    if not target_file:
+        print("no_netplan_file")
+        sys.exit(0)
+
+    with open(target_file) as fh:
+        data = yaml.safe_load(fh) or {}
+
+    net = data.setdefault("network", {})
+    net.setdefault("ethernets", {}).setdefault(iface, {})
+    iface_cfg = net["ethernets"][iface]
+
+    # Check if a default route already exists
+    routes = iface_cfg.get("routes", [])
+    existing = [r for r in routes if r.get("to") in ("default", "0.0.0.0/0")]
+
+    if existing and existing[0].get("via") == gateway:
+        print("already_set")
+        sys.exit(0)
+
+    # Remove old default routes and add the correct one
+    routes = [r for r in routes if r.get("to") not in ("default", "0.0.0.0/0")]
+    routes.append({"to": "default", "via": gateway})
+    iface_cfg["routes"] = routes
+
+    with open(target_file, "w") as fh:
+        yaml.dump(data, fh, default_flow_style=False, allow_unicode=True)
+
+    print("updated:" + target_file)
+    EOF
+  register: netplan_result
+  changed_when: "'updated:' in netplan_result.stdout"
+  when: netplan_files.files | length > 0
+
+- name: Apply netplan changes
+  command: netplan apply
+  when:
+    - netplan_files.files | length > 0
+    - "'updated:' in netplan_result.stdout"
+
+- name: Show netplan result
+  debug:
+    msg: "{{ inventory_hostname }}: {{ netplan_result.stdout | default('no result') }}"
+  when: netplan_files.files | length > 0

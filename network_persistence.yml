@@ -1,0 +1,8 @@
+---
+- name: Persist default gateway across reboots
+  hosts: all
+  become: yes
+  remote_user: scloud
+
+  roles:
+    - network_persistence

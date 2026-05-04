@@ -1,0 +1,49 @@
+---
+- name: Get current default route
+  command: ip route show default
+  register: default_route_raw
+  changed_when: false
+  failed_when: false
+
+- name: Skip host with no default route
+  debug:
+    msg: "No default route on {{ inventory_hostname }}, skipping persistence."
+  when: default_route_raw.stdout == ""
+
+- name: Parse gateway and interface from default route
+  set_fact:
+    current_gateway: "{{ default_route_raw.stdout | regex_search('via (\\S+)', '\\1') | first }}"
+    current_interface: "{{ default_route_raw.stdout | regex_search('dev (\\S+)', '\\1') | first }}"
+  when: default_route_raw.stdout != ""
+
+- name: Show detected gateway info
+  debug:
+    msg: "{{ inventory_hostname }}: gateway={{ current_gateway }}, interface={{ current_interface }}"
+  when: default_route_raw.stdout != ""
+
+- name: Check if NetworkManager is running
+  command: systemctl is-active NetworkManager
+  register: nm_active
+  changed_when: false
+  failed_when: false
+  when: default_route_raw.stdout != ""
+
+- name: Persist route via NetworkManager
+  include_tasks: networkmanager.yml
+  when:
+    - default_route_raw.stdout != ""
+    - nm_active.rc == 0
+
+- name: Persist route via ifcfg (CentOS 7 / legacy RHEL without NM)
+  include_tasks: ifcfg.yml
+  when:
+    - default_route_raw.stdout != ""
+    - nm_active.rc != 0
+    - ansible_os_family == "RedHat"
+
+- name: Persist route via netplan (Ubuntu without NM)
+  include_tasks: netplan.yml
+  when:
+    - default_route_raw.stdout != ""
+    - nm_active.rc != 0
+    - ansible_os_family == "Debian"
