@@ -1,0 +1,44 @@
+[default]
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/audit/audit.log]
+sourcetype = linux_audit
+index = {{ splunk_index_audit }}
+
+[monitor:///var/log/secure]
+sourcetype = linux_secure
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/messages]
+sourcetype = linux_messages_syslog
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/kern.log]
+sourcetype = linux_messages_syslog
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/cron]
+sourcetype = syslog
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/dnf.log]
+sourcetype = dpkg
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/dnf.rpm.log]
+sourcetype = dpkg
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/yum.log]
+sourcetype = dpkg
+index = {{ splunk_index_linux }}
+
+[monitor:///var/log/httpd/access_log]
+sourcetype = web_access
+index = {{ splunk_index_linux }}
+disabled = true
+
+[monitor:///var/log/httpd/error_log]
+sourcetype = web_error
+index = {{ splunk_index_linux }}
+disabled = true

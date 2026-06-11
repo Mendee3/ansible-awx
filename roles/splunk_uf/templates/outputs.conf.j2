@@ -1,0 +1,8 @@
+[tcpout]
+defaultGroup = primary_indexer
+
+[tcpout:primary_indexer]
+server = {{ splunk_indexer_host }}:{{ splunk_indexer_port }}
+useSSL = false
+compressed = true
+sendCookedData = true

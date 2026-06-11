@@ -1,0 +1,17 @@
+---
+- name: Splunk Universal Forwarder Installation and Configuration
+  hosts: linux
+  become: yes
+  remote_user: scloud
+
+  vars:
+    # REQUIRED - set via AWX Survey or extra vars:
+    # splunk_indexer_host: "192.168.x.x"
+    # splunk_uf_rpm_url: "https://download.splunk.com/products/universalforwarder/releases/..."
+    # splunk_uf_deb_url: "https://download.splunk.com/products/universalforwarder/releases/..."
+    #
+    # Get download URLs from:
+    # https://www.splunk.com/en_us/download/universal-forwarder.html
+
+  roles:
+    - splunk_uf

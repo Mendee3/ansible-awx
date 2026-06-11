@@ -1,0 +1,17 @@
+---
+# Get the correct URLs from: https://www.splunk.com/en_us/download/universal-forwarder.html
+# URL format: https://download.splunk.com/products/universalforwarder/releases/<version>/linux/splunkforwarder-<version>-<build>-linux-x86_64.rpm
+# Set these as AWX Survey/extra vars or update them here before running.
+splunk_uf_rpm_url: ""
+splunk_uf_deb_url: ""
+
+splunk_install_dir: /opt/splunkforwarder
+splunk_user: splunk
+splunk_group: splunk
+
+# REQUIRED: Set this to your Splunk indexer IP or hostname
+splunk_indexer_host: "172.18.9.12"
+splunk_indexer_port: "9997"
+
+splunk_index_linux: "linux"
+splunk_index_audit: "linux_audit"

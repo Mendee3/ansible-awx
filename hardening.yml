@@ -21,6 +21,7 @@
     - ssh_hardening
     - firewalld
     - cis_benchmark
+    - splunk_uf
 
   # After this job completes:
   # 1. Verify each admin can SSH in with their default password

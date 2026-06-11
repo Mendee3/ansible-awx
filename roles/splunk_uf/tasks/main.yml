@@ -1,0 +1,131 @@
+---
+- name: Validate required variables
+  assert:
+    that:
+      - splunk_indexer_host | length > 0
+      - (ansible_os_family == "Debian" and splunk_uf_deb_url | length > 0) or
+        (ansible_os_family != "Debian" and splunk_uf_rpm_url | length > 0)
+    fail_msg: |
+      Set splunk_indexer_host and the appropriate download URL:
+        splunk_uf_rpm_url  (RHEL/CentOS/Oracle/Alma)
+        splunk_uf_deb_url  (Ubuntu/Debian)
+      Get URLs from: https://www.splunk.com/en_us/download/universal-forwarder.html
+
+- name: Check if Splunk UF is already installed
+  stat:
+    path: "{{ splunk_install_dir }}/bin/splunk"
+  register: splunk_binary
+
+- name: Download Splunk UF package (RPM)
+  get_url:
+    url: "{{ splunk_uf_rpm_url }}"
+    dest: /tmp/splunkforwarder.rpm
+    mode: '0644'
+  when:
+    - not splunk_binary.stat.exists
+    - ansible_os_family != "Debian"
+
+- name: Download Splunk UF package (DEB)
+  get_url:
+    url: "{{ splunk_uf_deb_url }}"
+    dest: /tmp/splunkforwarder.deb
+    mode: '0644'
+  when:
+    - not splunk_binary.stat.exists
+    - ansible_os_family == "Debian"
+
+- name: Install Splunk UF (RPM)
+  yum:
+    name: /tmp/splunkforwarder.rpm
+    state: present
+    disable_gpg_check: yes
+  when:
+    - not splunk_binary.stat.exists
+    - ansible_os_family != "Debian"
+
+- name: Install Splunk UF (DEB)
+  apt:
+    deb: /tmp/splunkforwarder.deb
+  when:
+    - not splunk_binary.stat.exists
+    - ansible_os_family == "Debian"
+
+- name: Ensure splunk user is in adm group (Ubuntu - log read access)
+  user:
+    name: "{{ splunk_user }}"
+    groups: adm
+    append: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install acl package for setfacl support (RHEL/CentOS)
+  package:
+    name: acl
+    state: present
+  when: ansible_os_family != "Debian"
+
+- name: Grant splunk user read access to audit.log via ACL
+  acl:
+    path: /var/log/audit/audit.log
+    entity: "{{ splunk_user }}"
+    etype: user
+    permissions: r
+    state: present
+  ignore_errors: yes
+
+- name: Deploy outputs.conf
+  template:
+    src: outputs.conf.j2
+    dest: "{{ splunk_install_dir }}/etc/system/local/outputs.conf"
+    owner: "{{ splunk_user }}"
+    group: "{{ splunk_group }}"
+    mode: '0640'
+  notify: restart splunkforwarder
+
+- name: Deploy inputs.conf (Ubuntu/Debian)
+  template:
+    src: inputs_ubuntu.conf.j2
+    dest: "{{ splunk_install_dir }}/etc/system/local/inputs.conf"
+    owner: "{{ splunk_user }}"
+    group: "{{ splunk_group }}"
+    mode: '0640'
+  when: ansible_os_family == "Debian"
+  notify: restart splunkforwarder
+
+- name: Deploy inputs.conf (RHEL/CentOS/Oracle/Alma)
+  template:
+    src: inputs_rhel.conf.j2
+    dest: "{{ splunk_install_dir }}/etc/system/local/inputs.conf"
+    owner: "{{ splunk_user }}"
+    group: "{{ splunk_group }}"
+    mode: '0640'
+  when: ansible_os_family != "Debian"
+  notify: restart splunkforwarder
+
+- name: Enable Splunk UF boot-start with systemd
+  command: >
+    {{ splunk_install_dir }}/bin/splunk enable boot-start
+    --systemd-managed 1
+    --accept-license
+    --answer-yes
+    --no-prompt
+    -user {{ splunk_user }}
+  args:
+    creates: /etc/systemd/system/SplunkForwarder.service
+  notify: restart splunkforwarder
+
+- name: Enable and start SplunkForwarder service
+  systemd:
+    name: SplunkForwarder
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Verify SplunkForwarder is running
+  command: systemctl is-active SplunkForwarder
+  register: splunk_status
+  changed_when: false
+  ignore_errors: yes
+
+- name: Show SplunkForwarder status
+  debug:
+    msg: "SplunkForwarder status: {{ splunk_status.stdout }}"
