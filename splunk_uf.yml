@@ -1,6 +1,6 @@
 ---
 - name: Splunk Universal Forwarder Installation and Configuration
-  hosts: linux
+  hosts: all
   become: yes
   remote_user: scloud
 
