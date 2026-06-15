@@ -7,11 +7,14 @@
   vars:
     # REQUIRED - set via AWX Survey or extra vars:
     # splunk_indexer_host: "192.168.x.x"
+    #
+    # Option A - local file (place package in roles/splunk_uf/files/):
+    # splunk_uf_local_rpm: "splunkforwarder-10.4.0-f798d4d49089.x86_64.rpm"
+    # splunk_uf_local_deb: "splunkforwarder-10.4.0-f798d4d49089-linux-amd64.deb"
+    #
+    # Option B - download from internet:
     # splunk_uf_rpm_url: "https://download.splunk.com/products/universalforwarder/releases/..."
     # splunk_uf_deb_url: "https://download.splunk.com/products/universalforwarder/releases/..."
-    #
-    # Get download URLs from:
-    # https://www.splunk.com/en_us/download/universal-forwarder.html
 
   roles:
     - splunk_uf

@@ -3,19 +3,40 @@
   assert:
     that:
       - splunk_indexer_host | length > 0
-      - (ansible_os_family == "Debian" and splunk_uf_deb_url | length > 0) or
-        (ansible_os_family != "Debian" and splunk_uf_rpm_url | length > 0)
+      - (ansible_os_family == "Debian" and (splunk_uf_local_deb | length > 0 or splunk_uf_deb_url | length > 0)) or
+        (ansible_os_family != "Debian" and (splunk_uf_local_rpm | length > 0 or splunk_uf_rpm_url | length > 0))
     fail_msg: |
-      Set splunk_indexer_host and the appropriate download URL:
-        splunk_uf_rpm_url  (RHEL/CentOS/Oracle/Alma)
-        splunk_uf_deb_url  (Ubuntu/Debian)
-      Get URLs from: https://www.splunk.com/en_us/download/universal-forwarder.html
+      Set splunk_indexer_host and one of the following for your OS:
+        splunk_uf_local_rpm / splunk_uf_local_deb  (filename in roles/splunk_uf/files/)
+        splunk_uf_rpm_url  / splunk_uf_deb_url     (download URL)
 
 - name: Check if Splunk UF is already installed
   stat:
     path: "{{ splunk_install_dir }}/bin/splunk"
   register: splunk_binary
 
+# --- local file mode ---
+- name: Copy Splunk UF package from control node (RPM)
+  copy:
+    src: "{{ splunk_uf_local_rpm }}"
+    dest: /tmp/splunkforwarder.rpm
+    mode: '0644'
+  when:
+    - not splunk_binary.stat.exists
+    - ansible_os_family != "Debian"
+    - splunk_uf_local_rpm | length > 0
+
+- name: Copy Splunk UF package from control node (DEB)
+  copy:
+    src: "{{ splunk_uf_local_deb }}"
+    dest: /tmp/splunkforwarder.deb
+    mode: '0644'
+  when:
+    - not splunk_binary.stat.exists
+    - ansible_os_family == "Debian"
+    - splunk_uf_local_deb | length > 0
+
+# --- URL download mode (only when no local file supplied) ---
 - name: Download Splunk UF package (RPM)
   get_url:
     url: "{{ splunk_uf_rpm_url }}"
@@ -24,6 +45,7 @@
   when:
     - not splunk_binary.stat.exists
     - ansible_os_family != "Debian"
+    - splunk_uf_local_rpm | length == 0
 
 - name: Download Splunk UF package (DEB)
   get_url:
@@ -33,6 +55,7 @@
   when:
     - not splunk_binary.stat.exists
     - ansible_os_family == "Debian"
+    - splunk_uf_local_deb | length == 0
 
 - name: Install Splunk UF (RPM)
   yum:

@@ -1,7 +1,11 @@
 ---
+# Install from local files (path on the Ansible control node / AWX EE).
+# Takes priority over URL if set.
+splunk_uf_local_rpm: ""   # e.g. splunkforwarder-10.4.0-f798d4d49089.x86_64.rpm
+splunk_uf_local_deb: ""   # e.g. splunkforwarder-10.4.0-f798d4d49089-linux-amd64.deb
+
+# Install from URL (used only when local file variables above are empty).
 # Get the correct URLs from: https://www.splunk.com/en_us/download/universal-forwarder.html
-# URL format: https://download.splunk.com/products/universalforwarder/releases/<version>/linux/splunkforwarder-<version>-<build>-linux-x86_64.rpm
-# Set these as AWX Survey/extra vars or update them here before running.
 splunk_uf_rpm_url: ""
 splunk_uf_deb_url: ""
 
