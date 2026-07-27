@@ -73,6 +73,20 @@
     - not splunk_binary.stat.exists
     - ansible_os_family == "Debian"
 
+- name: Ensure splunk group exists
+  group:
+    name: "{{ splunk_group }}"
+    state: present
+
+- name: Ensure splunk user exists
+  user:
+    name: "{{ splunk_user }}"
+    group: "{{ splunk_group }}"
+    system: yes
+    shell: /sbin/nologin
+    create_home: no
+    state: present
+
 - name: Ensure splunk user is in adm group (Ubuntu - log read access)
   user:
     name: "{{ splunk_user }}"
