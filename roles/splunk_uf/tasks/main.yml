@@ -10,6 +10,16 @@
         splunk_uf_local_rpm / splunk_uf_local_deb  (filename in roles/splunk_uf/files/)
         splunk_uf_rpm_url  / splunk_uf_deb_url     (download URL)
 
+- name: Validate admin credential is provided for first-time initialization
+  assert:
+    that:
+      - splunk_admin_password is defined
+      - splunk_admin_password | length > 0
+    fail_msg: |
+      Set splunk_admin_password (via Ansible Vault or an AWX Vault credential) -
+      it is required to seed the admin account on first install and is never
+      stored in this repo in plaintext.
+
 - name: Check if Splunk UF is already installed
   stat:
     path: "{{ splunk_install_dir }}/bin/splunk"
@@ -72,6 +82,27 @@
   when:
     - not splunk_binary.stat.exists
     - ansible_os_family == "Debian"
+
+- name: Seed admin account for unattended first-time start
+  template:
+    src: user-seed.conf.j2
+    dest: "{{ splunk_install_dir }}/etc/system/local/user-seed.conf"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not splunk_binary.stat.exists
+
+- name: Accept license and perform first-time Splunk initialization
+  command: >
+    {{ splunk_install_dir }}/bin/splunk start
+    --accept-license
+    --answer-yes
+    --no-prompt
+  when: not splunk_binary.stat.exists
+
+- name: Stop Splunk after first-time initialization (systemd takes over from here)
+  command: "{{ splunk_install_dir }}/bin/splunk stop"
+  when: not splunk_binary.stat.exists
 
 - name: Ensure splunk group exists
   group:
@@ -142,9 +173,6 @@
   command: >
     {{ splunk_install_dir }}/bin/splunk enable boot-start
     -systemd-managed 1
-    -accept-license
-    -answer-yes
-    -no-prompt
     -user {{ splunk_user }}
   args:
     creates: /etc/systemd/system/SplunkForwarder.service

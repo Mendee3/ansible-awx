@@ -17,5 +17,10 @@ splunk_group: splunk
 splunk_indexer_host: "172.18.9.12"
 splunk_indexer_port: "9997"
 
+# Admin account seeding for unattended first-time start.
+# splunk_admin_password is REQUIRED and must be supplied via Ansible Vault
+# or an AWX Vault credential - never set it here in plaintext.
+splunk_admin_user: admin
+
 splunk_index_linux: "linux"
 splunk_index_audit: "linux_audit"
