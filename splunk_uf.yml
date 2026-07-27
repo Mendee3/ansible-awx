@@ -8,13 +8,17 @@
     # REQUIRED - Splunk indexer to forward to (can still be overridden via AWX Survey/extra vars):
     splunk_indexer_host: "172.18.9.12"
 
-    # Option A - local file (already placed in roles/splunk_uf/files/):
-    splunk_uf_local_rpm: "splunkforwarder-10.4.0-f798d4d49089.x86_64.rpm"
-    splunk_uf_local_deb: "splunkforwarder-10.4.0-f798d4d49089-linux-amd64.deb"
+    # Option A - local file (place package in roles/splunk_uf/files/):
+    # Not used here: AWX syncs this project from git, and .gitignore intentionally
+    # excludes *.rpm/*.deb, so local-file mode never has the package available
+    # on the runner. Package is served from this control host instead (Option B).
+    splunk_uf_local_rpm: ""
+    splunk_uf_local_deb: ""
 
-    # Option B - download from internet (unused while local files above are set):
-    # splunk_uf_rpm_url: "https://download.splunk.com/products/universalforwarder/releases/..."
-    # splunk_uf_deb_url: "https://download.splunk.com/products/universalforwarder/releases/..."
+    # Option B - download URL. Served from this AWX host's nginx (not the internet)
+    # since the target hosts may not have outbound internet access.
+    splunk_uf_rpm_url: "http://172.18.9.70:8090/splunkforwarder-10.4.0-f798d4d49089.x86_64.rpm"
+    splunk_uf_deb_url: "http://172.18.9.70:8090/splunkforwarder-10.4.0-f798d4d49089-linux-amd64.deb"
 
   roles:
     - splunk_uf
