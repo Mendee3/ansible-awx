@@ -5,14 +5,14 @@
   remote_user: scloud
 
   vars:
-    # REQUIRED - set via AWX Survey or extra vars:
-    # splunk_indexer_host: "192.168.x.x"
-    #
-    # Option A - local file (place package in roles/splunk_uf/files/):
-    # splunk_uf_local_rpm: "splunkforwarder-10.4.0-f798d4d49089.x86_64.rpm"
-    # splunk_uf_local_deb: "splunkforwarder-10.4.0-f798d4d49089-linux-amd64.deb"
-    #
-    # Option B - download from internet:
+    # REQUIRED - Splunk indexer to forward to (can still be overridden via AWX Survey/extra vars):
+    splunk_indexer_host: "172.18.9.12"
+
+    # Option A - local file (already placed in roles/splunk_uf/files/):
+    splunk_uf_local_rpm: "splunkforwarder-10.4.0-f798d4d49089.x86_64.rpm"
+    splunk_uf_local_deb: "splunkforwarder-10.4.0-f798d4d49089-linux-amd64.deb"
+
+    # Option B - download from internet (unused while local files above are set):
     # splunk_uf_rpm_url: "https://download.splunk.com/products/universalforwarder/releases/..."
     # splunk_uf_deb_url: "https://download.splunk.com/products/universalforwarder/releases/..."
 
