@@ -141,10 +141,10 @@
 - name: Enable Splunk UF boot-start with systemd
   command: >
     {{ splunk_install_dir }}/bin/splunk enable boot-start
-    --systemd-managed 1
-    --accept-license
-    --answer-yes
-    --no-prompt
+    -systemd-managed 1
+    -accept-license
+    -answer-yes
+    -no-prompt
     -user {{ splunk_user }}
   args:
     creates: /etc/systemd/system/SplunkForwarder.service
