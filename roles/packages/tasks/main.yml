@@ -33,7 +33,7 @@
   shell: |
     dnf install -y \
       --disablerepo="*" \
-      --enablerepo="baseos,appstream,extras,crb,almalinux*" \
+      --enablerepo="baseos,appstream,extras,crb" \
       net-tools \
       net-snmp \
       net-snmp-utils \

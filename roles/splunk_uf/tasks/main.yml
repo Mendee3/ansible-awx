@@ -169,6 +169,24 @@
   when: ansible_os_family != "Debian"
   notify: restart splunkforwarder
 
+# SOC-provided log-source prerequisite script (Ubuntu-specific: auditd,
+# rsyslog, journald, Sysmon). Deploy-only — not auto-executed by this
+# playbook. The SOC team runs it by hand, e.g.:
+#   sudo bash Enable-LinuxLogging-Ubuntu.sh --skip-auditd-rules --skip-sysmon \
+#     --splunk-user {{ splunk_user }}
+# --skip-auditd-rules and --skip-sysmon are recommended because those steps
+# download from raw.githubusercontent.com / packages.microsoft.com, and
+# these targets are not assumed to have outbound internet access (see
+# splunk_uf_rpm_url/deb_url comments in playbooks/splunk_uf.yml).
+- name: Deploy SOC Linux-logging prerequisite script (Ubuntu/Debian)
+  copy:
+    src: Enable-LinuxLogging-Ubuntu.sh
+    dest: "{{ splunk_install_dir }}/etc/system/local/Enable-LinuxLogging-Ubuntu.sh"
+    owner: root
+    group: root
+    mode: '0750'
+  when: ansible_os_family == "Debian"
+
 - name: Enable Splunk UF boot-start with systemd
   command: >
     {{ splunk_install_dir }}/bin/splunk enable boot-start
