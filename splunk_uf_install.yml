@@ -1,0 +1,331 @@
+---
+# Splunk Universal Forwarder install + baseline logging (AWX 24.6.1)
+# Targets: RHEL, CentOS (Stream), AlmaLinux, Oracle Linux  -> rpm / rhel-centos scripts
+#          Ubuntu                                          -> deb / ubuntu scripts
+#
+# AWX job template:
+#   - Machine credential with privilege escalation (become) enabled
+#   - Survey (or custom credential type) supplying: splunk_admin_password  (type: password)
+#   - Optional survey/extra vars: indexer_ip, splunk_uf_version, splunk_uf_build
+#   - Limit: exclude Windows hosts (e.g. "linux" group or "all:!windows")
+#
+- name: Install and configure Splunk Universal Forwarder
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    splunk_home: /opt/splunkforwarder
+    splunk_user: splunkfwd
+    splunk_group: splunkfwd
+
+    splunk_uf_version: "10.6.0.5"
+    splunk_uf_build: "86587d4e3b27"
+    splunk_uf_base_url: "https://download.splunk.com/products/universalforwarder/releases/{{ splunk_uf_version }}/linux"
+    splunk_uf_rpm: "splunkforwarder-{{ splunk_uf_version }}-{{ splunk_uf_build }}.x86_64.rpm"
+    splunk_uf_deb: "splunkforwarder-{{ splunk_uf_version }}-{{ splunk_uf_build }}-linux-amd64.deb"
+
+    repo_raw: "https://raw.githubusercontent.com/Usku81/splunk-uf-logging-scripts/master"
+
+    indexer_ip: "172.18.9.12"
+    indexer_port: 9997
+
+    splunk_admin_user: admin
+    # splunk_admin_password: supplied by AWX survey / credential, never hard-coded
+
+    enforce_supported_os: true
+
+    # Written by splunk_cleanup.yml when keep_fishbucket=true
+    fishbucket_backup: /var/tmp/splunk-fishbucket-backup
+
+  pre_tasks:
+    - name: Validate inputs and platform
+      ansible.builtin.assert:
+        that:
+          - splunk_admin_password is defined
+          - splunk_admin_password | length >= 8
+          - ansible_os_family in ['RedHat', 'Debian']
+          - ansible_architecture == 'x86_64'
+        fail_msg: >-
+          Need splunk_admin_password (>=8 chars), a RedHat/Debian family OS and x86_64.
+        quiet: true
+
+    # Installation is only for hosts with internet access: fail fast and clearly
+    # on hosts that cannot reach the download sources.
+    - name: Check reachability of download sources
+      ansible.builtin.uri:
+        url: "{{ item }}"
+        method: HEAD
+        timeout: 15
+        status_code: [200, 301, 302, 403, 404]
+      loop:
+        - "{{ splunk_uf_base_url }}/{{ splunk_uf_rpm }}"
+        - "{{ repo_raw }}/outputs.conf"
+        - "https://github.com"
+      register: net_check
+      ignore_errors: true
+
+    - name: Stop if this host has no internet access
+      ansible.builtin.assert:
+        that: net_check is not failed
+        fail_msg: >-
+          {{ inventory_hostname }} cannot reach download.splunk.com /
+          raw.githubusercontent.com / github.com. Skipped - no internet access.
+        quiet: true
+
+    - name: Check OS versions supported by the logging scripts (RHEL 8/9 family, Ubuntu 20.04+)
+      ansible.builtin.assert:
+        that: >-
+          (ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 8) or
+          (ansible_distribution == 'Ubuntu' and ansible_distribution_major_version | int >= 20)
+        fail_msg: "{{ ansible_distribution }} {{ ansible_distribution_version }} is not supported by the logging scripts."
+        quiet: true
+      when: enforce_supported_os | bool
+
+    # Step 3: determine package type and matching repo folder from the distro
+    - name: Select package and script set for this distro
+      ansible.builtin.set_fact:
+        uf_pkg_type: "{{ 'deb' if ansible_os_family == 'Debian' else 'rpm' }}"
+        uf_pkg_file: "{{ splunk_uf_deb if ansible_os_family == 'Debian' else splunk_uf_rpm }}"
+        uf_repo_dir: "{{ 'ubuntu' if ansible_os_family == 'Debian' else 'rhel-centos' }}"
+        uf_script: "{{ 'Enable-LinuxLogging-Ubuntu.sh' if ansible_os_family == 'Debian' else 'Enable-LinuxLogging-RHEL-CentOS.sh' }}"
+        uf_local_dir: "{{ splunk_home }}/etc/system/local"
+
+  tasks:
+    # Step 1: group first, then user (useradd normally creates the group itself,
+    # so the original "useradd then groupadd" order fails)
+    - name: Create splunkfwd group
+      ansible.builtin.group:
+        name: "{{ splunk_group }}"
+        state: present
+
+    - name: Create splunkfwd user
+      ansible.builtin.user:
+        name: "{{ splunk_user }}"
+        group: "{{ splunk_group }}"
+        create_home: true
+        state: present
+
+    # Step 2: SPLUNK_HOME
+    - name: Create SPLUNK_HOME
+      ansible.builtin.file:
+        path: "{{ splunk_home }}"
+        state: directory
+        mode: "0755"
+
+    - name: Check whether the UF is already installed
+      ansible.builtin.stat:
+        path: "{{ splunk_home }}/bin/splunk"
+      register: uf_bin
+
+    # Step 4: download package into SPLUNK_HOME
+    - name: Download UF package ({{ uf_pkg_type }})
+      ansible.builtin.get_url:
+        url: "{{ splunk_uf_base_url }}/{{ uf_pkg_file }}"
+        dest: "{{ splunk_home }}/{{ uf_pkg_file }}"
+        mode: "0644"
+        timeout: 300
+      when: not uf_bin.stat.exists
+
+    # Step 5: install
+    - name: Install UF (rpm)
+      ansible.builtin.command:
+        cmd: "rpm -i {{ splunk_home }}/{{ uf_pkg_file }}"
+        creates: "{{ splunk_home }}/bin/splunk"
+      when: uf_pkg_type == 'rpm'
+
+    - name: Install UF (deb)
+      ansible.builtin.command:
+        cmd: "dpkg -i {{ splunk_home }}/{{ uf_pkg_file }}"
+        creates: "{{ splunk_home }}/bin/splunk"
+      when: uf_pkg_type == 'deb'
+
+    - name: Remove installer package from SPLUNK_HOME
+      ansible.builtin.file:
+        path: "{{ splunk_home }}/{{ uf_pkg_file }}"
+        state: absent
+
+    # Step 6: ownership
+    - name: Set ownership of SPLUNK_HOME
+      ansible.builtin.file:
+        path: "{{ splunk_home }}"
+        owner: "{{ splunk_user }}"
+        group: "{{ splunk_group }}"
+        recurse: true
+
+    # MISSING STEP: admin credentials. UF 9.x prompts for an admin user on first
+    # start; without user-seed.conf the job hangs in AWX.
+    - name: Check whether the UF has been initialised
+      ansible.builtin.stat:
+        path: "{{ splunk_home }}/etc/passwd"
+      register: uf_passwd
+
+    - name: Write user-seed.conf (consumed and deleted on first start)
+      ansible.builtin.copy:
+        dest: "{{ uf_local_dir }}/user-seed.conf"
+        owner: "{{ splunk_user }}"
+        group: "{{ splunk_group }}"
+        mode: "0600"
+        content: |
+          [user_info]
+          USERNAME = {{ splunk_admin_user }}
+          PASSWORD = {{ splunk_admin_password }}
+      no_log: true
+      when: not uf_passwd.stat.exists
+
+    # MISSING STEP: accept licence non-interactively, as splunkfwd (not root),
+    # then stop so boot-start can be configured.
+    - name: First start - accept licence (as splunkfwd)
+      ansible.builtin.command:
+        cmd: >-
+          runuser -u {{ splunk_user }} --
+          {{ splunk_home }}/bin/splunk start --accept-license --answer-yes --no-prompt
+        creates: "{{ splunk_home }}/etc/passwd"
+      register: uf_first_start
+
+    - name: Stop UF after first start
+      ansible.builtin.command:
+        cmd: "runuser -u {{ splunk_user }} -- {{ splunk_home }}/bin/splunk stop"
+      when: uf_first_start is changed
+
+    # MISSING STEP: boot-start, so the UF survives reboots and runs as splunkfwd.
+    # Done before the logging script, which patches the Splunk systemd unit.
+    - name: Enable boot-start (systemd, runs as splunkfwd)
+      ansible.builtin.command:
+        cmd: >-
+          {{ splunk_home }}/bin/splunk enable boot-start
+          -systemd-managed 1 -user {{ splunk_user }} -group {{ splunk_group }}
+        creates: /etc/systemd/system/SplunkForwarder.service
+
+    # Step 7: fetch limits.conf, script, inputs.conf (per distro) and shared outputs.conf.
+    # limits.conf goes first so throughput/queue caps exist before any input is
+    # enabled - prevents the burst when the UF reads existing logs on first run.
+    - name: Fetch limits.conf (throttle first-run burst)
+      ansible.builtin.get_url:
+        url: "{{ repo_raw }}/limits.conf"
+        dest: "{{ uf_local_dir }}/limits.conf"
+        mode: "0644"
+      notify: Restart SplunkForwarder
+
+    - name: Fetch logging script
+      ansible.builtin.get_url:
+        url: "{{ repo_raw }}/{{ uf_repo_dir }}/{{ uf_script }}"
+        dest: "{{ uf_local_dir }}/{{ uf_script }}"
+        mode: "0750"
+
+    - name: Fetch inputs.conf for this distro
+      ansible.builtin.get_url:
+        url: "{{ repo_raw }}/{{ uf_repo_dir }}/inputs.conf"
+        dest: "{{ uf_local_dir }}/inputs.conf"
+        mode: "0644"
+      notify: Restart SplunkForwarder
+
+    - name: Fetch shared outputs.conf
+      ansible.builtin.get_url:
+        url: "{{ repo_raw }}/outputs.conf"
+        dest: "{{ uf_local_dir }}/outputs.conf"
+        mode: "0644"
+      notify: Restart SplunkForwarder
+
+    # Step 8: run the script as root with --skip-sysmon.
+    # --splunk-user is passed so the audit.log ACLs are granted to splunkfwd.
+    - name: Run baseline logging script
+      ansible.builtin.command:
+        cmd: "bash {{ uf_script }} --skip-sysmon --splunk-user {{ splunk_user }}"
+        chdir: "{{ uf_local_dir }}"
+        creates: "{{ splunk_home }}/etc/.baseline_logging_done"
+      environment:
+        SPLUNK_HOME: "{{ splunk_home }}"
+      register: logging_script
+
+    - name: Show logging script result (PASS/FAIL block)
+      ansible.builtin.debug:
+        msg: "{{ logging_script.stdout_lines[-30:] }}"
+      when: logging_script is changed
+
+    - name: Mark logging script as done
+      ansible.builtin.file:
+        path: "{{ splunk_home }}/etc/.baseline_logging_done"
+        state: touch
+        mode: "0644"
+      when: logging_script is changed
+
+    # Step 9: set the indexer
+    - name: Set indexer in outputs.conf
+      ansible.builtin.replace:
+        path: "{{ uf_local_dir }}/outputs.conf"
+        regexp: '<INDEXER_IP>:\d+'
+        replace: "{{ indexer_ip }}:{{ indexer_port }}"
+      notify: Restart SplunkForwarder
+
+    - name: Read outputs.conf back
+      ansible.builtin.slurp:
+        src: "{{ uf_local_dir }}/outputs.conf"
+      register: outputs_conf
+
+    - name: Verify no placeholder remains
+      ansible.builtin.assert:
+        that:
+          - "'<INDEXER_IP>' not in (outputs_conf.content | b64decode)"
+          - "(indexer_ip ~ ':' ~ indexer_port) in (outputs_conf.content | b64decode)"
+        fail_msg: "outputs.conf still has the placeholder or the wrong indexer."
+        quiet: true
+
+    # Restore read positions saved by splunk_cleanup.yml (keep_fishbucket=true),
+    # so logs already sent by the old deployment are not re-sent.
+    - name: Check for fishbucket backup from cleanup
+      ansible.builtin.stat:
+        path: "{{ fishbucket_backup }}"
+      register: fb_backup
+
+    - name: Restore fishbucket
+      when: fb_backup.stat.exists
+      block:
+        - name: Make sure the UF is stopped
+          ansible.builtin.systemd:
+            name: SplunkForwarder
+            state: stopped
+
+        - name: Replace fresh fishbucket with the backup
+          ansible.builtin.shell: |
+            rm -rf {{ splunk_home }}/var/lib/splunk/fishbucket
+            cp -a {{ fishbucket_backup }} {{ splunk_home }}/var/lib/splunk/fishbucket
+          changed_when: true
+
+        - name: Remove the backup
+          ansible.builtin.file:
+            path: "{{ fishbucket_backup }}"
+            state: absent
+
+    # MISSING STEP: fetched files are root-owned; fix before starting
+    - name: Re-apply ownership after fetch/script
+      ansible.builtin.file:
+        path: "{{ splunk_home }}"
+        owner: "{{ splunk_user }}"
+        group: "{{ splunk_group }}"
+        recurse: true
+
+    # Step 10: start (via systemd instead of "splunk start" as root)
+    - name: Start and enable SplunkForwarder
+      ansible.builtin.systemd:
+        name: SplunkForwarder
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Apply pending restarts
+      ansible.builtin.meta: flush_handlers
+
+    # MISSING STEP: verification
+    - name: Wait for connection to indexer
+      ansible.builtin.wait_for:
+        path: "{{ splunk_home }}/var/log/splunk/splunkd.log"
+        search_regex: "Connected to idx={{ indexer_ip | regex_escape }}:{{ indexer_port }}"
+        timeout: 180
+
+  handlers:
+    - name: Restart SplunkForwarder
+      ansible.builtin.systemd:
+        name: SplunkForwarder
+        state: restarted
+        daemon_reload: true

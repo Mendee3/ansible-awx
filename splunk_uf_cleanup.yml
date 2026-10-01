@@ -1,0 +1,158 @@
+---
+# Removes ANY previous Splunk deployment (UF or full Splunk) from a Linux host:
+# processes, services, packages, install dirs, splunk/splunkfwd users, ACLs.
+# Does NOT touch auditd/rsyslog/journald changes - the install playbook's
+# logging script is idempotent and re-applies them.
+- name: Remove previous Splunk deployments
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    search_roots: [/opt, /usr/local, /home]
+    cleanup_users: [splunk, splunkfwd]
+    # true  = keep the record of already-read log positions, so the new UF does
+    #         NOT re-send existing logs (no duplicates, but index=linux gets no history)
+    # false = new UF re-reads existing logs into index=linux (throttled by limits.conf)
+    keep_fishbucket: false
+    fishbucket_backup: /var/tmp/splunk-fishbucket-backup
+
+  tasks:
+    # Safety net against inventory mistakes (e.g. the indexer added by accident)
+    - name: Check whether this host receives Splunk data on 9997
+      ansible.builtin.command: ss -Hltn 'sport = :9997'
+      register: rx_check
+      changed_when: false
+
+    - name: Refuse to clean a receiving Splunk instance
+      ansible.builtin.assert:
+        that: rx_check.stdout | trim | length == 0
+        fail_msg: "{{ inventory_hostname }} listens on 9997 - looks like an indexer. Not touching it."
+        quiet: true
+
+    - name: Find Splunk installations
+      ansible.builtin.shell: |
+        find {{ search_roots | join(' ') }} -maxdepth 4 -type f -path '*/bin/splunkd' 2>/dev/null \
+          | sed 's|/bin/splunkd$||' | sort -u
+      register: c_homes
+      changed_when: false
+
+    - name: List installed Splunk packages
+      ansible.builtin.shell: |
+        {% if ansible_os_family == 'Debian' %}
+        dpkg-query -W -f='${Package} ${Status}\n' 'splunk*' 2>/dev/null | awk '/ installed$/{print $1}'
+        {% else %}
+        rpm -qa --qf '%{NAME}\n' 'splunk*'
+        {% endif %}
+      register: pkg_list
+      changed_when: false
+
+    - name: Set cleanup targets
+      ansible.builtin.set_fact:
+        splunk_homes: "{{ (c_homes.stdout_lines + ['/opt/splunkforwarder', '/opt/splunk']) | unique }}"
+        splunk_pkgs: "{{ pkg_list.stdout_lines | select | list }}"
+
+    # --- stop everything
+    - name: Stop via splunk CLI
+      ansible.builtin.shell: "[ -x {{ item }}/bin/splunk ] && timeout 120 {{ item }}/bin/splunk stop || true"
+      loop: "{{ splunk_homes }}"
+      changed_when: false
+
+    - name: Stop and disable known service units
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: [SplunkForwarder, Splunkd, splunk]
+      failed_when: false
+
+    - name: Kill any remaining splunkd
+      ansible.builtin.shell: "pkill -9 -x splunkd; sleep 3; true"
+      changed_when: false
+
+    # --- optional: keep read positions for the new install
+    - name: Back up fishbucket
+      ansible.builtin.shell: |
+        rm -rf {{ fishbucket_backup }}
+        for h in {{ splunk_homes | join(' ') }}; do
+          if [ -d "$h/var/lib/splunk/fishbucket" ]; then
+            cp -a "$h/var/lib/splunk/fishbucket" {{ fishbucket_backup }} && echo "backed up from $h"
+            break
+          fi
+        done
+      register: fb
+      changed_when: "'backed up' in fb.stdout"
+      when: keep_fishbucket | bool
+
+    # --- ACLs must go before the users, while names still resolve
+    - name: Remove log ACLs granted to old Splunk users
+      ansible.builtin.shell: |
+        command -v setfacl >/dev/null || exit 0
+        for u in {{ cleanup_users | join(' ') }}; do
+          id "$u" >/dev/null 2>&1 || continue
+          setfacl -R -x "u:$u" /var/log 2>/dev/null
+          setfacl -R -x "d:u:$u" /var/log 2>/dev/null
+        done
+        true
+      changed_when: false
+
+    # --- packages, services, files
+    # rpm/dpkg directly: Ansible's package modules need Python bindings that
+    # are missing for the interpreter ansible-core 2.17+ uses on RHEL 8.
+    # Retry without maintainer scripts in case an old install's scripts are broken.
+    - name: Remove Splunk packages
+      ansible.builtin.shell: |
+        {% if ansible_os_family == 'Debian' %}
+        dpkg --purge {{ splunk_pkgs | join(' ') }} || dpkg --purge --force-all {{ splunk_pkgs | join(' ') }}
+        {% else %}
+        rpm -e {{ splunk_pkgs | join(' ') }} || rpm -e --noscripts {{ splunk_pkgs | join(' ') }}
+        {% endif %}
+      when: splunk_pkgs | length > 0
+
+    - name: Remove service units, init scripts and polkit rules
+      ansible.builtin.shell: |
+        rm -rf /etc/systemd/system/SplunkForwarder.service* /etc/systemd/system/Splunkd.service* \
+               /etc/systemd/system/splunk.service* /etc/init.d/splunk
+        find /etc/rc*.d -name '*splunk*' -delete 2>/dev/null
+        find /etc/polkit-1/rules.d -iname '*splunk*' -delete 2>/dev/null
+        true
+      changed_when: true
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Remove install directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ splunk_homes }}"
+
+    - name: Remove old Splunk users
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: absent
+        remove: true
+        force: true
+      loop: "{{ cleanup_users }}"
+
+    - name: Remove old Splunk groups
+      ansible.builtin.group:
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ cleanup_users }}"
+
+    # --- verify
+    - name: Verify nothing is left
+      ansible.builtin.shell: |
+        pgrep -x splunkd && echo "PROCESS STILL RUNNING"
+        find {{ search_roots | join(' ') }} -maxdepth 4 -type f -path '*/bin/splunkd' 2>/dev/null
+        true
+      register: c_verify
+      changed_when: false
+
+    - name: Assert host is clean
+      ansible.builtin.assert:
+        that: c_verify.stdout | trim | length == 0
+        fail_msg: "Leftovers found: {{ c_verify.stdout_lines }}"
+        success_msg: "{{ inventory_hostname }} clean (removed: {{ splunk_pkgs | join(',') or 'no packages' }})"
