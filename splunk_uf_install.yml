@@ -113,32 +113,64 @@
         state: directory
         mode: "0755"
 
-    - name: Check whether the UF is already installed
-      ansible.builtin.stat:
-        path: "{{ splunk_home }}/bin/splunk"
-      register: uf_bin
+    # Judge "installed" by the package database, not by bin/splunk existing:
+    # a failed/truncated install can leave files behind.
+    - name: Check whether the UF package is properly installed
+      ansible.builtin.shell: |
+        {% if ansible_os_family == 'Debian' %}
+        [ "$(dpkg-query -W -f='${db:Status-Status}' splunkforwarder 2>/dev/null)" = "installed" ] && [ -x {{ splunk_home }}/bin/splunk ]
+        {% else %}
+        rpm -q splunkforwarder >/dev/null 2>&1 && [ -x {{ splunk_home }}/bin/splunk ]
+        {% endif %}
+      register: uf_pkg_state
+      changed_when: false
+      failed_when: false
 
-    # Step 4: download package into SPLUNK_HOME
-    - name: Download UF package ({{ uf_pkg_type }})
-      ansible.builtin.get_url:
-        url: "{{ splunk_uf_base_url }}/{{ uf_pkg_file }}"
-        dest: "{{ splunk_home }}/{{ uf_pkg_file }}"
-        mode: "0644"
-        timeout: 300
-      when: not uf_bin.stat.exists
+    - name: Record install state
+      ansible.builtin.set_fact:
+        uf_installed: "{{ uf_pkg_state.rc == 0 }}"
+
+    # Step 4: download into SPLUNK_HOME with retries + resume, and verify the
+    # package integrity before installing (truncated downloads get re-fetched).
+    - name: Download and verify UF package ({{ uf_pkg_type }})
+      ansible.builtin.shell: |
+        F="{{ splunk_home }}/{{ uf_pkg_file }}"
+        U="{{ splunk_uf_base_url }}/{{ uf_pkg_file }}"
+        verify() {
+        {% if ansible_os_family == 'Debian' %}
+          dpkg-deb --fsys-tarfile "$F" > /dev/null 2>&1
+        {% else %}
+          rpm -K --nosignature "$F" > /dev/null 2>&1
+        {% endif %}
+        }
+        if [ -f "$F" ] && verify; then echo "existing file valid"; exit 0; fi
+        for i in 1 2 3 4 5; do
+          if curl -fsSL --connect-timeout 20 --retry 3 --retry-delay 5 -C - -o "$F" "$U"; then
+            if verify; then echo "downloaded and verified on attempt $i"; exit 0; fi
+            echo "attempt $i: file corrupt, discarding" >&2
+            rm -f "$F"
+          else
+            echo "attempt $i: transfer interrupted, will resume" >&2
+          fi
+          sleep 10
+        done
+        echo "giving up: could not get a valid package after 5 attempts" >&2
+        rm -f "$F"
+        exit 1
+      register: uf_dl
+      changed_when: "'downloaded' in uf_dl.stdout"
+      when: not uf_installed
 
     # Step 5: install
     - name: Install UF (rpm)
       ansible.builtin.command:
-        cmd: "rpm -i {{ splunk_home }}/{{ uf_pkg_file }}"
-        creates: "{{ splunk_home }}/bin/splunk"
-      when: uf_pkg_type == 'rpm'
+        cmd: "rpm -i --replacepkgs {{ splunk_home }}/{{ uf_pkg_file }}"
+      when: uf_pkg_type == 'rpm' and not uf_installed
 
     - name: Install UF (deb)
       ansible.builtin.command:
         cmd: "dpkg -i {{ splunk_home }}/{{ uf_pkg_file }}"
-        creates: "{{ splunk_home }}/bin/splunk"
-      when: uf_pkg_type == 'deb'
+      when: uf_pkg_type == 'deb' and not uf_installed
 
     - name: Remove installer package from SPLUNK_HOME
       ansible.builtin.file:
