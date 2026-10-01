@@ -160,6 +160,23 @@
         path: "{{ splunk_home }}/etc/passwd"
       register: uf_passwd
 
+    # A Splunk unit left by an old deployment makes the first start hand over to
+    # systemd as the non-root user, which fails ("Connection timed out").
+    # On a not-yet-initialised UF, remove any such leftovers first.
+    - name: Remove leftover Splunk service units before first start
+      ansible.builtin.shell: |
+        found=0
+        for f in /etc/systemd/system/SplunkForwarder.service /etc/systemd/system/Splunkd.service \
+                 /etc/systemd/system/splunk.service /lib/systemd/system/SplunkForwarder.service \
+                 /usr/lib/systemd/system/SplunkForwarder.service /etc/init.d/splunk; do
+          if [ -e "$f" ]; then systemctl stop "$(basename "$f" .service)" 2>/dev/null; rm -rf "$f" "$f.d"; found=1; echo "removed $f"; fi
+        done
+        [ $found -eq 1 ] && systemctl daemon-reload
+        true
+      register: stale_units
+      changed_when: stale_units.stdout | length > 0
+      when: not uf_passwd.stat.exists
+
     - name: Write user-seed.conf (consumed and deleted on first start)
       ansible.builtin.copy:
         dest: "{{ uf_local_dir }}/user-seed.conf"
@@ -190,12 +207,30 @@
 
     # MISSING STEP: boot-start, so the UF survives reboots and runs as splunkfwd.
     # Done before the logging script, which patches the Splunk systemd unit.
+    # Accept an existing unit only if it is ours (right user, right SPLUNK_HOME)
+    - name: Check SplunkForwarder unit belongs to this install
+      ansible.builtin.shell: >-
+        grep -qs '^User={{ splunk_user }}$' /etc/systemd/system/SplunkForwarder.service &&
+        grep -qs '{{ splunk_home }}/bin/splunk' /etc/systemd/system/SplunkForwarder.service
+      register: unit_ok
+      changed_when: false
+      failed_when: false
+
+    - name: Remove foreign SplunkForwarder unit
+      ansible.builtin.shell: |
+        systemctl stop SplunkForwarder 2>/dev/null
+        {{ splunk_home }}/bin/splunk disable boot-start 2>/dev/null
+        rm -rf /etc/systemd/system/SplunkForwarder.service /etc/systemd/system/SplunkForwarder.service.d
+        systemctl daemon-reload
+        true
+      when: unit_ok.rc != 0
+
     - name: Enable boot-start (systemd, runs as splunkfwd)
       ansible.builtin.command:
         cmd: >-
           {{ splunk_home }}/bin/splunk enable boot-start
           -systemd-managed 1 -user {{ splunk_user }} -group {{ splunk_group }}
-        creates: /etc/systemd/system/SplunkForwarder.service
+      when: unit_ok.rc != 0
 
     # Step 7: fetch limits.conf, script, inputs.conf (per distro) and shared outputs.conf.
     # limits.conf goes first so throughput/queue caps exist before any input is

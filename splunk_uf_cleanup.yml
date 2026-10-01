@@ -112,7 +112,9 @@
     - name: Remove service units, init scripts and polkit rules
       ansible.builtin.shell: |
         rm -rf /etc/systemd/system/SplunkForwarder.service* /etc/systemd/system/Splunkd.service* \
-               /etc/systemd/system/splunk.service* /etc/init.d/splunk
+               /etc/systemd/system/splunk.service* /etc/init.d/splunk \
+               /lib/systemd/system/SplunkForwarder.service* /lib/systemd/system/Splunkd.service* \
+               /usr/lib/systemd/system/SplunkForwarder.service* /usr/lib/systemd/system/Splunkd.service*
         find /etc/rc*.d -name '*splunk*' -delete 2>/dev/null
         find /etc/polkit-1/rules.d -iname '*splunk*' -delete 2>/dev/null
         true
