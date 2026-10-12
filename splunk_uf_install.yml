@@ -25,7 +25,7 @@
     splunk_uf_rpm: "splunkforwarder-{{ splunk_uf_version }}-{{ splunk_uf_build }}.x86_64.rpm"
     splunk_uf_deb: "splunkforwarder-{{ splunk_uf_version }}-{{ splunk_uf_build }}-linux-amd64.deb"
 
-    repo_raw: "https://raw.githubusercontent.com/Usku81/splunk-uf-logging-scripts/master"
+    repo_raw: "https://raw.githubusercontent.com/Usku81/splunk-uf-logging-scripts/budget"
 
     indexer_ip: "172.18.9.12"
     indexer_port: 9997
@@ -304,6 +304,9 @@
       environment:
         SPLUNK_HOME: "{{ splunk_home }}"
       register: logging_script
+      failed_when: >-
+        (logging_script.rc | default(0)) != 0 or
+        logging_script.stdout is search('FAIL: (auditd rules loaded|PROCTITLE|daemon execs narrowed|connect scoped|curated)')
 
     - name: Show logging script result (PASS/FAIL block)
       ansible.builtin.debug:
@@ -363,6 +366,41 @@
           ansible.builtin.file:
             path: "{{ fishbucket_backup }}"
             state: absent
+
+    # auditd creates every new log file with log_group; without this the
+    # ACL on audit.log is lost at the first rotation
+    - name: Give auditd logs to the splunkfwd group
+      ansible.builtin.lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^\s*log_group\s*='
+        line: "log_group = {{ splunk_group }}"
+      register: audit_group
+
+    # The script grants r on the directory; opening a file needs x
+    - name: Allow splunkfwd to traverse /var/log/audit
+      ansible.builtin.command: "setfacl -m u:{{ splunk_user }}:rx /var/log/audit"
+      changed_when: false
+
+    # 'service' wrapper: RHEL's auditd unit refuses systemctl stop/restart
+    - name: Restart auditd to apply log_group
+      ansible.builtin.command: service auditd restart
+      when: audit_group is changed
+
+    # Start the new UF on a fresh audit.log instead of re-sending up to
+    # 100 MB of old-ruleset noise per host
+    - name: Rotate audit.log before first UF start
+      ansible.builtin.command: pkill -USR1 -x auditd
+      when:
+        - uf_first_start is changed
+        - not fb_backup.stat.exists
+
+    - name: Verify splunkfwd can read audit.log
+      ansible.builtin.command: "runuser -u {{ splunk_user }} -- head -c 1 /var/log/audit/audit.log"
+      register: audit_read
+      until: audit_read.rc == 0
+      retries: 5
+      delay: 2
+      changed_when: false
 
     # MISSING STEP: fetched files are root-owned; fix before starting
     - name: Re-apply ownership after fetch/script
