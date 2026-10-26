@@ -381,9 +381,13 @@
       ansible.builtin.command: "setfacl -m u:{{ splunk_user }}:rx /var/log/audit"
       changed_when: false
 
-    # 'service' wrapper: RHEL's auditd unit refuses systemctl stop/restart
+    # 'service' wrapper: most RHEL auditd units refuse systemctl stop/restart.
+    # Some RHEL hosts allow systemctl restart but fail the 'service' wrapper
+    # (job 239), so fall back to systemctl there
     - name: Restart auditd to apply log_group
-      ansible.builtin.command: service auditd restart
+      ansible.builtin.shell: >-
+        service auditd restart
+        {{ '|| systemctl restart auditd' if ansible_os_family == 'RedHat' else '' }}
       when: audit_group is changed
 
     # Start the new UF on a fresh audit.log instead of re-sending up to
