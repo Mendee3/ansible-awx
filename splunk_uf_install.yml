@@ -320,11 +320,27 @@
       register: logging_script
       failed_when: >-
         (logging_script.rc | default(0)) != 0 or
-        logging_script.stdout is search('FAIL: (auditd rules loaded|PROCTITLE|daemon execs narrowed|connect scoped|curated)')
+        logging_script.stdout is search('FAIL: (auditd rules loaded|PROCTITLE|daemon execs narrowed|connect scoped|curated(?! feed received self-test))')
 
     - name: Show logging script result (PASS/FAIL block)
       ansible.builtin.debug:
         msg: "{{ logging_script.stdout_lines[-30:] }}"
+      when: logging_script is changed
+
+    # The script checks its self-test after 1s, but on RHEL rsyslog reads
+    # via imjournal and the script's own journald restart can delay it past
+    # that (job 259), so re-test the feed here with a real wait
+    - name: Send curated feed test message
+      ansible.builtin.command: >-
+        logger -p daemon.warning -t splunk-curation
+        "curated feed check {{ ansible_date_time.epoch }}"
+      when: logging_script is changed
+
+    - name: Wait for test message in curated feed
+      ansible.builtin.wait_for:
+        path: /var/log/splunk-syslog.log
+        search_regex: "curated feed check {{ ansible_date_time.epoch }}"
+        timeout: 30
       when: logging_script is changed
 
     - name: Mark logging script as done
