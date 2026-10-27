@@ -294,6 +294,20 @@
         mode: "0644"
       notify: Restart SplunkForwarder
 
+    # rsyslog drops to the syslog user and cannot create this file when
+    # /var/log has been tightened to 755 (radio, job 255); logrotate keeps
+    # recreating it as root afterwards
+    - name: Pre-create curated syslog feed (Ubuntu)
+      ansible.builtin.file:
+        path: /var/log/splunk-syslog.log
+        state: touch
+        owner: syslog
+        group: adm
+        mode: "0640"
+        access_time: preserve
+        modification_time: preserve
+      when: ansible_os_family == 'Debian'
+
     # Step 8: run the script as root with --skip-sysmon.
     # --splunk-user is passed so the audit.log ACLs are granted to splunkfwd.
     - name: Run baseline logging script
