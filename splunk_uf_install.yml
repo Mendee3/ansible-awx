@@ -30,6 +30,10 @@
     indexer_ip: "172.18.9.12"
     indexer_port: 9997
 
+    # Management port. Set splunk_mgmt_port as a host var to force one;
+    # otherwise 8089 is used unless another app already holds it (3.12)
+    splunk_mgmt_port_alt: 18089
+
     splunk_admin_user: admin
     # splunk_admin_password: supplied by AWX survey / credential, never hard-coded
 
@@ -191,6 +195,52 @@
       ansible.builtin.stat:
         path: "{{ splunk_home }}/etc/passwd"
       register: uf_passwd
+
+    - name: Check whether another app holds port 8089
+      ansible.builtin.shell: "ss -Hltnp 'sport = :8089' | grep -v '\"splunkd\"' || true"
+      register: mgmt_8089
+      changed_when: false
+      when: splunk_mgmt_port is not defined
+
+    - name: Choose management port
+      ansible.builtin.set_fact:
+        uf_mgmt_port: >-
+          {{ splunk_mgmt_port | default(splunk_mgmt_port_alt
+             if mgmt_8089.stdout | trim | length > 0 else 8089) }}
+
+    - name: Check the chosen management port is free for the UF
+      ansible.builtin.shell: "ss -Hltnp 'sport = :{{ uf_mgmt_port }}' | grep -v '\"splunkd\"' || true"
+      register: mgmt_chosen
+      changed_when: false
+      failed_when: mgmt_chosen.stdout | trim | length > 0
+      when: uf_mgmt_port | int != 8089
+
+    # Keep the bind address the package ships with; only the port changes
+    - name: Read default management address
+      ansible.builtin.command: "sed -n 's/^mgmtHostPort *= *//p' {{ splunk_home }}/etc/system/default/web.conf"
+      register: mgmt_default
+      changed_when: false
+
+    - name: Create local web.conf [settings] stanza
+      ansible.builtin.lineinfile:
+        path: "{{ splunk_home }}/etc/system/local/web.conf"
+        line: "[settings]"
+        create: true
+        owner: "{{ splunk_user }}"
+        group: "{{ splunk_group }}"
+        mode: "0600"
+      when: uf_mgmt_port | int != 8089
+
+    - name: Set management port in web.conf
+      ansible.builtin.lineinfile:
+        path: "{{ splunk_home }}/etc/system/local/web.conf"
+        regexp: '^\s*mgmtHostPort\s*='
+        line: >-
+          mgmtHostPort = {{ (mgmt_default.stdout | trim).rsplit(':', 1)[0]
+          if ':' in mgmt_default.stdout else '127.0.0.1' }}:{{ uf_mgmt_port }}
+        insertafter: '^\[settings\]'
+      when: uf_mgmt_port | int != 8089
+      notify: Restart SplunkForwarder
 
     # A Splunk unit left by an old deployment makes the first start hand over to
     # systemd as the non-root user, which fails ("Connection timed out").
