@@ -1,0 +1,213 @@
+---
+# ARMADA implant hunt (guard + kworkerd bot + libproc.so LD_PRELOAD rootkit)
+# Read-only. Targets: RHEL / CentOS 7+ / AlmaLinux / Rocky / Ubuntu / Debian (x86_64, aarch64)
+#
+# Rootkit-aware: the bot installs /usr/lib/libproc.so via /etc/ld.so.preload, which hooks
+# readdir/open/stat/... in every dynamically linked program (sh, ls, grep, find, python).
+# This playbook therefore pushes a STATIC busybox to each host and runs the hunt under it.
+# A static binary never loads ld.so.preload, so the hunt sees the real filesystem/proc, and
+# it diffs that view against the system's own ls/cat to expose anything being hidden.
+#
+# Place static busybox binaries in files/busybox/busybox-<arch> (see files/busybox/README.md),
+# or set armada_busybox_urls. Without one the hunt runs "degraded" (rootkit-blind) and every
+# host is reported at least as REVIEW.
+#
+# AWX notes:
+#   - Machine credential needs privilege escalation (root).
+#   - Uses only ansible.builtin modules. CentOS 7 (python 2.7) / RHEL 8 (platform-python 3.6)
+#     targets need an execution environment with ansible-core <= 2.16.
+#   - Results: job artifacts `armada_hunt` (per host) and `armada_infected_hosts`.
+#   - Survey vars: armada_fail_on_hit, armada_scan_home, armada_scan_containers,
+#     armada_require_static, armada_extra_hashes.
+
+- name: Hunt ARMADA implant IOCs (rootkit-aware)
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    armada_fail_on_hit: true          # infected hosts shown as failed (red) in AWX
+    armada_scan_home: true            # recurse /root and /home
+    armada_scan_containers: true      # scan docker/podman/containerd overlay layers on the host
+    armada_require_static: false      # true = fail host if static busybox cannot be used
+    armada_timeout: 1800              # seconds for the hunt task
+    armada_work_base: /root           # must be on an exec-allowed filesystem
+    armada_busybox_dir: "{{ playbook_dir }}/files/busybox"
+    armada_busybox_urls: {}           # e.g. {x86_64: "https://repo.internal/busybox-x86_64"}
+    armada_busybox_sha256: {}         # e.g. {x86_64: "<sha256>"} - verified when downloading
+    armada_extra_hashes: []
+    armada_ioc_hashes:
+      - 24e97399bb4d189c6e099b489f460c56f859d36829d866a75aaf4b10a786712c  # guard
+      - e016bbc1b8da86c4a37342b779da370ade831631402a20875c3eeaf748210c3e  # hash embedded in guard
+      - e0553235b622bbb5268d759e0a5d06328bce5e4896920d3fc0aad2878850a60b  # kworkerd bot (decrypted payload)
+      - 052a1d01204ba36631e4eee8250e64025ce9e1df0df0b9764ab50fcab50d9ec5  # libproc.so LD_PRELOAD rootkit
+      - 53d4b93e080ab61d894ced8c1d2895f5369033f04dcb551e01eea07856ef4b21  # bundled static tor (.d/tor)
+
+  tasks:
+    - name: Gather minimal facts (architecture, distribution)
+      ansible.builtin.setup:
+        gather_subset: ['!all']
+
+    - name: Run hunt
+      block:
+        - name: Create private work directory
+          ansible.builtin.tempfile:
+            state: directory
+            path: "{{ armada_work_base }}"
+            prefix: ".armada_hunt."
+          register: armada_tmp
+
+        - name: Set paths
+          ansible.builtin.set_fact:
+            armada_bb: "{{ armada_tmp.path }}/busybox"
+            armada_bb_bin: "{{ armada_tmp.path }}/bin"
+            armada_script: "{{ armada_tmp.path }}/hunt.sh"
+            armada_bb_name: "busybox-{{ ansible_architecture }}"
+
+        - name: Look for bundled static busybox on the controller
+          ansible.builtin.stat:
+            path: "{{ armada_busybox_dir }}/{{ armada_bb_name }}"
+          delegate_to: localhost
+          become: false
+          register: armada_bb_local
+
+        - name: Push static busybox
+          ansible.builtin.copy:
+            src: "{{ armada_busybox_dir }}/{{ armada_bb_name }}"
+            dest: "{{ armada_bb }}"
+            mode: "0700"
+          when: armada_bb_local.stat.exists
+
+        - name: Download static busybox (fallback)
+          ansible.builtin.get_url:
+            url: "{{ armada_busybox_urls[ansible_architecture] }}"
+            dest: "{{ armada_bb }}"
+            mode: "0700"
+            checksum: "{{ ('sha256:' ~ armada_busybox_sha256[ansible_architecture]) if ansible_architecture in armada_busybox_sha256 else omit }}"
+            timeout: 60
+          when:
+            - not armada_bb_local.stat.exists
+            - ansible_architecture in armada_busybox_urls
+          failed_when: false
+
+        - name: Check busybox is present on host
+          ansible.builtin.stat:
+            path: "{{ armada_bb }}"
+          register: armada_bb_remote
+
+        # A static binary maps no shared objects; if ld.so.preload were injected it would show here.
+        - name: Verify busybox runs and is static
+          ansible.builtin.command:
+            argv: ["{{ armada_bb }}", "cat", "/proc/self/maps"]
+          register: armada_bb_maps
+          changed_when: false
+          failed_when: false
+          when: armada_bb_remote.stat.exists
+
+        - name: Select hunt mode
+          ansible.builtin.set_fact:
+            armada_mode: >-
+              {{ 'static' if (armada_bb_remote.stat.exists
+                              and (armada_bb_maps.rc | default(1)) == 0
+                              and (armada_bb_maps.stdout | default('')) | length > 0
+                              and not ((armada_bb_maps.stdout | default('')) is search('\.so(\.[0-9]+)*\s*$', multiline=True)))
+                 else 'degraded' }}
+
+        - name: Enforce static mode when required
+          ansible.builtin.fail:
+            msg: >-
+              Static busybox unavailable or not static on {{ inventory_hostname }}
+              (arch {{ ansible_architecture }}; fapolicyd/noexec on {{ armada_work_base }}?).
+          when:
+            - armada_require_static | bool
+            - armada_mode != 'static'
+
+        - name: Install busybox applet links
+          ansible.builtin.command:
+            argv:
+              - "{{ armada_bb }}"
+              - sh
+              - -c
+              - '"$2" mkdir -p "$1" && for a in $("$2" --list); do "$2" ln -sf "$2" "$1/$a"; done'
+              - sh
+              - "{{ armada_bb_bin }}"
+              - "{{ armada_bb }}"
+          changed_when: false
+          when: armada_mode == 'static'
+
+        - name: Push hunt script
+          ansible.builtin.copy:
+            src: armada_hunt.sh
+            dest: "{{ armada_script }}"
+            mode: "0600"
+
+        - name: Execute hunt
+          ansible.builtin.command:
+            argv: "{{ [armada_bb, 'sh', armada_script] if armada_mode == 'static' else ['/bin/sh', armada_script] }}"
+          environment:
+            BB_BIN: "{{ armada_bb_bin if armada_mode == 'static' else '' }}"
+            HUNT_MODE: "{{ armada_mode }}"
+            HUNT_DIR: "{{ armada_tmp.path }}"
+            # armada_extra_hashes may be a list (extra vars) or a string (AWX survey textarea)
+            IOC_HASHES: >-
+              {{ (armada_ioc_hashes
+                  + ((armada_extra_hashes | replace(',', ' ')).split()
+                     if armada_extra_hashes is string else armada_extra_hashes | list))
+                 | join(' ') }}
+            SCAN_HOME: "{{ armada_scan_home | bool | string | lower }}"
+            SCAN_CONTAINERS: "{{ armada_scan_containers | bool | string | lower }}"
+          timeout: "{{ armada_timeout | int }}"
+          register: armada_raw
+          changed_when: false
+
+      always:
+        - name: Remove work directory
+          ansible.builtin.file:
+            path: "{{ armada_tmp.path }}"
+            state: absent
+          when: armada_tmp.path is defined
+
+    - name: Parse findings
+      ansible.builtin.set_fact:
+        armada_hits: "{{ armada_raw.stdout_lines | select('match', '^HIT[|]') | list }}"
+        armada_suspects: >-
+          {{ (armada_raw.stdout_lines | select('match', '^SUSPECT[|]') | list)
+             + ([] if armada_mode == 'static'
+                else ['SUSPECT|degraded|static busybox not used - LD_PRELOAD rootkit could hide artefacts from this hunt']) }}
+        armada_info: "{{ armada_raw.stdout_lines | select('match', '^INFO[|]') | list }}"
+
+    - name: Set host status
+      ansible.builtin.set_fact:
+        armada_status: "{{ 'INFECTED' if armada_hits | length > 0 else ('REVIEW' if armada_suspects | length > 0 else 'CLEAN') }}"
+
+    - name: Show findings
+      ansible.builtin.debug:
+        msg:
+          status: "{{ armada_status }}"
+          mode: "{{ armada_mode }}"
+          distribution: "{{ ansible_distribution | default('?') }} {{ ansible_distribution_version | default('') }} {{ ansible_architecture }}"
+          hits: "{{ armada_hits }}"
+          suspects: "{{ armada_suspects }}"
+          info: "{{ armada_info }}"
+
+    - name: Publish results to AWX job artifacts
+      ansible.builtin.set_stats:
+        aggregate: true
+        per_host: false
+        data:
+          armada_hunt: >-
+            {{ {inventory_hostname: {
+                 'status': armada_status,
+                 'mode': armada_mode,
+                 'os': (ansible_distribution | default('?')) ~ ' ' ~ (ansible_distribution_version | default('')),
+                 'hits': armada_hits,
+                 'suspects': armada_suspects,
+                 'info': armada_info}} }}
+          armada_infected_hosts: "{{ [inventory_hostname] if armada_status == 'INFECTED' else [] }}"
+
+    - name: Flag infected host
+      ansible.builtin.fail:
+        msg: "ARMADA indicators found on {{ inventory_hostname }} ({{ armada_hits | length }} HIT)"
+      when:
+        - armada_fail_on_hit | bool
+        - armada_status == 'INFECTED'

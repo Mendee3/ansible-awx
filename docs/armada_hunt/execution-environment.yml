@@ -1,0 +1,23 @@
+---
+# AWX execution environment with ansible-core 2.16 - the last release that can manage
+# CentOS 7 (python 2.7) and RHEL 8 (platform-python 3.6) targets.
+# Build:  ansible-builder build -t <registry>/armada-ee:2.16 -f execution-environment.yml
+version: 3
+
+images:
+  base_image:
+    name: quay.io/centos/centos:stream9
+
+dependencies:
+  python_interpreter:
+    package_system: python3.11
+    python_path: /usr/bin/python3.11
+  ansible_core:
+    package_pip: ansible-core>=2.16,<2.17
+  ansible_runner:
+    package_pip: ansible-runner
+  system:
+    - openssh-clients [platform:rpm]
+
+options:
+  package_manager_path: /usr/bin/dnf
