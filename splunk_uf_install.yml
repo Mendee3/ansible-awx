@@ -6,7 +6,7 @@
 # AWX job template:
 #   - Machine credential with privilege escalation (become) enabled
 #   - Survey (or custom credential type) supplying: splunk_admin_password  (type: password)
-#   - Optional survey/extra vars: indexer_ip, splunk_uf_version, splunk_uf_build
+#   - Optional survey/extra vars: indexer_ip, splunk_index, splunk_uf_version, splunk_uf_build
 #   - Limit: exclude Windows hosts (e.g. "linux" group or "all:!windows")
 #
 - name: Install and configure Splunk Universal Forwarder
@@ -29,6 +29,8 @@
 
     indexer_ip: "172.18.9.12"
     indexer_port: 9997
+    # Index for every stanza in inputs.conf (upstream ships "index = linux")
+    splunk_index: dc_linux
 
     # Management port. Set splunk_mgmt_port as a host var to force one;
     # otherwise 8089 is used unless another app already holds it (3.12)
@@ -336,6 +338,25 @@
         dest: "{{ uf_local_dir }}/inputs.conf"
         mode: "0644"
       notify: Restart SplunkForwarder
+
+    - name: Set index in inputs.conf
+      ansible.builtin.replace:
+        path: "{{ uf_local_dir }}/inputs.conf"
+        regexp: '^([ \t]*index[ \t]*=[ \t]*)linux[ \t]*$'
+        replace: '\g<1>{{ splunk_index }}'
+      notify: Restart SplunkForwarder
+
+    - name: Read inputs.conf back
+      ansible.builtin.slurp:
+        src: "{{ uf_local_dir }}/inputs.conf"
+      register: inputs_conf
+
+    - name: Verify no stanza still uses index = linux
+      ansible.builtin.assert:
+        that:
+          - "(inputs_conf.content | b64decode) is not search('^[ \\t]*index[ \\t]*=[ \\t]*linux[ \\t]*$', multiline=True)"
+        fail_msg: "inputs.conf still has index = linux."
+        quiet: true
 
     - name: Fetch shared outputs.conf
       ansible.builtin.get_url:
